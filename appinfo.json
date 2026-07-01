@@ -1,0 +1,30 @@
+{
+	"id": "com.junoavalon.app.isisbrowser",
+	"version": "3.8.0",
+	"vendor": "Juno Avalon",
+	"type": "web",
+	"main": "index.html",
+	"title": "Isis Web",
+	"keywords" : [ "web", "Browser", "Blazer", "Internet", "Juno", "Avalon", "Isis", "Osiris", "shindig", "explorer" ],
+	"icon": "icon.png",
+	"splashicon": "icon-256x256.png",
+	"uiRevision": 2,
+	"tapToShareSupported":true,
+	"mimeTypes": [
+{ "urlPattern": "^https?:" },
+{ "mime": "text/html", "extension": "html" },
+{ "mime": "text/html", "extension": "htm" },
+{ "mime": "application/xhtml+xml", "extension": "xml" }
+],
+	"universalSearch": {
+		"dbsearch": {
+			"displayName":"Bookmarks & History",
+			"url":"com.junoavalon.app.isisbrowser",
+			"launchParam":"url",
+			"launchParamDbField":"url",
+			"displayFields": ["title", "url"],
+			"dbQuery": [{"method":"search","params":{"query":{"from":"com.palm.browserbookmarks:1","where":[{"prop":"searchText","op":"?","val":"","collate":"primary"}],"limit":20}}},{"method":"search","params":{"query":{"from":"com.palm.browserhistory:1","where":[{"prop":"searchText","op":"?","val":"","collate":"primary"}],"limit":50}}}],
+			"batchQuery":true
+		}
+	}
+}
