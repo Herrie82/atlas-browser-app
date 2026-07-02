@@ -1,0 +1,9 @@
+{
+	"id":"com.junoavalon.logins:1",
+	"owner":"com.junoavalon.app.isisbrowser",
+	"indexes":[	{"name":"rev","props":[{"name":"_rev"}]},
+				{"name": "host", "props": [{"name": "host"}] },
+				{"name": "url", "props": [{"name": "url"}] },
+				{"name": "hostUser", "props": [{"name":"host"},{"name":"username"}] }],
+	"sync": true
+}

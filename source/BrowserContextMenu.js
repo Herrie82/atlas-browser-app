@@ -30,9 +30,18 @@ enyo.kind({
         {caption: $L("Download Link"), value:"downloadlinkClick"}
 	],
 	imageItems: [
-		{caption: $L("Copy To Photos"), value: "copyToPhotosClick"},
+		{caption: $L("Save Image"), value: "copyToPhotosClick"},
+		{caption: $L("Set Wallpaper"), value: "setWallpaperClick"},
 		{caption: $L("Share Image"), value: "shareImageClick"},
-		{caption: $L("Set Wallpaper"), value: "setWallpaperClick"}
+		{caption: $L("Copy Image URL"), value: "copyImageUrlClick"}
+	],
+	// Shown when the long-press did not land on a link or image (plain page/text),
+	// or when the engine hit-test isn't available. These act on the current page.
+	pageItems: [
+		{caption: $L("Open In New Card"), value: "pageNewCardClick"},
+		{caption: $L("Reading Mode"), value: "pageReaderClick"},
+		{caption: $L("Share Link"), value: "pageShareClick"},
+		{caption: $L("Copy URL"), value: "pageCopyLinkClick"}
 	],
 	openAtTap: function(inEvent, inTapInfo) {
 		this.tapPosition = {left: inEvent.pageX, top: inEvent.pageY};
@@ -56,6 +65,11 @@ enyo.kind({
 		}
 		if (this.tapInfo.isImage) {
 			items = (items || []).concat(this.imageItems);
+		}
+		// Nothing actionable at the point (or no engine hit-test): fall back to
+		// page-level actions so the long-press menu is never empty.
+		if (!items) {
+			items = [].concat(this.pageItems);
 		}
 		return items;
 	},

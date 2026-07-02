@@ -1,0 +1,12 @@
+[
+	{	"type"		: "db.kind"
+	,	"object"	: "com.junoavalon.logins:1"
+	,	"caller"	: "com.junoavalon.app.isisbrowser"
+	,	"operations":
+		{	"create": "allow"
+		,	"read"	: "allow"
+		,	"update": "allow"
+		,	"delete": "allow"
+		}
+	}
+]

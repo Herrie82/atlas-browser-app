@@ -76,6 +76,7 @@ enyo.kind({
 			onUserPasswordDialog: "showUserPasswordDialog",
 			onNewPage: "openNewCardWithIdentifier",
 			onPrint: "doPrint",
+			onEditorFocusChanged: "editorFocusChanged",
 			minFontSize: 2,
 		},
 		{kind: "FindBar", showing: false, onFind: "find", onGoToPrevious: "goToPrevious", onGoToNext: "goToNext"},
@@ -109,8 +110,16 @@ enyo.kind({
 				{kind: "Button", flex: 1, caption: $L("Don't Trust"), response: "0", className: "enyo-button-dark", onclick: "closeSSLConfirmBox"}
 			]}
 		]},
-        {name: "sslCertDialog", kind: "CertificateDialog", onCertLoad: "enableViewSSLCertificate", onClose: "closeSSLCertificate"}
+        {name: "sslCertDialog", kind: "CertificateDialog", onCertLoad: "enableViewSSLCertificate", onClose: "closeSSLCertificate"},
+		// Per-site saved logins + autofill. One-shot fill on first login-field focus; a picker only when
+		// the host has more than one saved login. (The old bottom-right toasters were replaced.)
+		{name: "loginsService", kind: "DbService", dbKind: "com.junoavalon.logins:1", reCallWatches: true},
+		{name: "loginPicker", kind: "LoginPicker", onPick: "loginPicked"},
+		{name: "saveLoginDialog", kind: "VerticalAcceptCancelPopup", acceptCaption: $L("Save"), onResponse: "saveLoginResponse", components: [
+			{name: "saveLoginMessage", className: "browser-dialog-body enyo-text-body "}
+		]}
     ],
+		loginsKind: "com.junoavalon.logins:1",
         changedUrl: false,
 	    isQuickRedirect: false,
 	WebKitErrors: {
@@ -225,7 +234,60 @@ enyo.kind({
 		}
 		if (inTitle) { this.$.actionbar.updateCurrentTitle(inUrl, inTitle); }   // patch the history entry once the real title parses (fixes "Untitled"/mismatch)
 		this.changedUrl = true;
+		this.checkHostLogins(inUrl);
 		this.doPageTitleChanged(this.title, this.url);
+	},
+	//* @protected
+	// Derive a bare, lowercased host from a URL (used to key saved logins).
+	hostFromUrl: function(inUrl) {
+		var m = (inUrl || "").match(/^[a-z]+:\/\/([^\/:?#]+)/i);
+		return m ? m[1].toLowerCase() : "";
+	},
+	// Autofill: when the page host changes, look up any saved logins for that host.
+	checkHostLogins: function(inUrl) {
+		var host = this.hostFromUrl(inUrl);
+		this._loginFilled = false;   // allow one autofill per page load
+		if (!host) {
+			this._loginHost = null;
+			this.hostLogins = [];
+			return;
+		}
+		if (host === this._loginHost) {
+			return; // already resolved logins for this host
+		}
+		this._loginHost = host;
+		this.$.loginsService.call({query: {where: [{prop: "host", op: "=", val: host}]}},
+			{method: "find", onSuccess: "gotHostLogins", onFailure: "loginsDbFailure"});
+	},
+	gotHostLogins: function(inSender, inResponse) {
+		// Just remember them; don't fill until a login field is focused (form is reliably present then).
+		this.hostLogins = (inResponse && inResponse.results) || [];
+	},
+	// Engine editor-focus signal (WebView.onEditorFocusChanged -> BrowserAdapter "editorFocused"): a field
+	// gained focus. Autofill ONCE per page: single login -> fill both fields in one shot; multiple -> picker.
+	editorFocusChanged: function(inSender, inFocused, inFieldType, inFieldActions) {
+		if (!inFocused || this._loginFilled) { return; }
+		if (!this.hostLogins || !this.hostLogins.length) { return; }
+		this._loginFilled = true;
+		if (this.hostLogins.length === 1) {
+			this.fillLogin(this.hostLogins[0]);
+		} else {
+			this.$.loginPicker.setLogins(this.hostLogins);
+			this.$.loginPicker.openAtCenter();
+		}
+	},
+	// User picked a login from the multi-login picker.
+	loginPicked: function(inSender, inLogin) {
+		this.fillLogin(inLogin);
+	},
+	// One-shot fill: hand the engine "\x02user\x02pass" via the existing insertStringAtCursor command; the
+	// engine fills BOTH the username + password fields in a single JS pass (no per-field tapping).
+	fillLogin: function(inLogin) {
+		if (!inLogin) { return; }
+		this.$.view.insertStringAtCursor("\x02" + (inLogin.username || "") + "\x02" + (inLogin.password || ""));
+	},
+	loginsDbFailure: function(inSender, inResponse) {
+		this.log("logins db error: " + (inResponse && inResponse.errorText));
 	},
 	gotHistoryState: function(inBack, inForward) {
 		this.canGoBack = inBack;
@@ -323,7 +385,56 @@ enyo.kind({
 		this.showPopup(this.$.loginDialog);
 	},
 	loginResponse: function(inSender, inAccept) {
-		this.sendDialogResponse(this, inAccept, this.$.userInput.getValue(), this.$.passwordInput.getValue());
+		var user = this.$.userInput.getValue();
+		var pass = this.$.passwordInput.getValue();
+		this.sendDialogResponse(this, inAccept, user, pass);
+		// After a successful HTTP/proxy-auth login, offer to remember it for this host.
+		if (inAccept && user && pass) {
+			this.offerSaveLogin(user, pass);
+		}
+	},
+	// Offer to save a submitted credential. Skips the prompt if the same host+username is
+	// already stored so the user isn't nagged on every visit.
+	offerSaveLogin: function(inUser, inPass) {
+		var url = this.url || "";
+		var host = this.hostFromUrl(url);
+		if (!host) {
+			return;
+		}
+		this.pendingSaveLogin = {host: host, url: url, username: inUser, password: inPass, title: this.title || host};
+		this.$.loginsService.call({query: {where: [{prop: "host", op: "=", val: host}]}},
+			{method: "find", onSuccess: "checkOfferSave", onFailure: "loginsDbFailure"});
+	},
+	checkOfferSave: function(inSender, inResponse) {
+		var p = this.pendingSaveLogin;
+		if (!p) {
+			return;
+		}
+		var results = (inResponse && inResponse.results) || [];
+		for (var i = 0; i < results.length; i++) {
+			if (results[i].username === p.username) {
+				this.pendingSaveLogin = null; // already saved for this host+username
+				return;
+			}
+		}
+		var msg = enyo.macroize($L("Save the password for {$user} on {$host}?"), {user: p.username, host: p.host});
+		this.$.saveLoginMessage.setContent(msg);
+		this.showPopup(this.$.saveLoginDialog);
+	},
+	saveLoginResponse: function(inSender, inAccept) {
+		var p = this.pendingSaveLogin;
+		this.pendingSaveLogin = null;
+		if (inAccept && p) {
+			p._kind = this.loginsKind;
+			p.date = (new Date()).getTime();
+			this.$.loginsService.call({objects: [p]}, {method: "put", onSuccess: "savedLogin", onFailure: "loginsDbFailure"});
+		}
+	},
+	savedLogin: function() {
+		// Force the next host check to re-query so the new login shows up for autofill.
+		this._loginHost = null;
+		var params = enyo.json.stringify({dontLaunch: true});
+		enyo.windows.addBannerMessage($L("Password saved"), params);
 	},
 	sendDialogResponse: function(inSender, inAccepted) {
 		this.log(inAccepted);
@@ -338,10 +449,17 @@ enyo.kind({
 		this.$.passwordInput.forceBlur();
 	},
 	openContextMenu: function(inSender, inEvent, inTapInfo) {
-		if (inTapInfo.isLink || inTapInfo.isImage) {
-			this.$.context.openAtTap(inEvent, inTapInfo);
-			return true;
+		// inTapInfo is the engine hit-test at the long-press point
+		// (isLink/linkUrl, isImage/imageUrl, editable). If the engine hit-test
+		// isn't wired yet it may be null/isNull; fall back to page-level actions.
+		var info = inTapInfo || {};
+		// A long-press inside an editable field belongs to the engine's own
+		// selection/paste handling, so don't hijack it with our menu.
+		if (info.editable) {
+			return;
 		}
+		this.$.context.openAtTap(inEvent, info);
+		return true;
 	},
 	contextItemClick: function(inSender, inValue, inTapInfo, inPosition) {
 		if (this[inValue]) {
@@ -353,6 +471,25 @@ enyo.kind({
 	},
 	openNewCard: function() {
 		enyo.windows.openWindow("index.html", null, null);
+	},
+	// --- page-level context menu actions (long-press on plain page/text, or when
+	// the engine hit-test is unavailable). These operate on the current page. ---
+	pageNewCardClick: function() {
+		this.openNewCard();
+	},
+	pageCopyLinkClick: function() {
+		if (!this.url) {
+			return;
+		}
+		enyo.dom.setClipboard(this.url);
+		var params = enyo.json.stringify({dontLaunch:true});
+		enyo.windows.addBannerMessage($L("Link Copied to clipboard"), params);
+	},
+	pageShareClick: function() {
+		this.shareLink(this.url, this.title || this.url);
+	},
+	pageReaderClick: function() {
+		this.doReaderLink(this.url, this.title || this.url);
 	},
 	openNewCardWithIdentifier: function(inSender, inIdentifier) {
 		enyo.windows.openWindow("index.html", null, {webviewId: inIdentifier});
@@ -388,6 +525,14 @@ enyo.kind({
 	setWallpaperClick: function(inTapInfo, inPosition) {
 		this.viewCall("saveImageAtPoint", [inPosition.left, inPosition.top, "/media/internal",
 			enyo.hitch(this, "finishSetWallpaper", inTapInfo)]);
+	},
+	copyImageUrlClick: function(inTapInfo) {
+		if (!inTapInfo || !inTapInfo.imageUrl) {
+			return;
+		}
+		enyo.dom.setClipboard(inTapInfo.imageUrl);
+		var params = enyo.json.stringify({dontLaunch:true});
+		enyo.windows.addBannerMessage($L("Image URL Copied to clipboard"), params);
 	},
 	openDialog: function(inTitle, inMessage) {
 		this.$.dialog.validateComponents();

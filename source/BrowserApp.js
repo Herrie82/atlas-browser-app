@@ -125,9 +125,11 @@ enyo.kind({
 			{name: "readerMenuItem", caption: $L("Reading Mode"), onclick: "readerClick"},
 			{name: "privateCardItem", caption: $L("New Private Card"), onclick: "newPrivateCardClick"},
 			{name: "preferencesItem", caption: $L("Preferences"), onclick: "preferencesClick"},
+			{name: "importLoginsItem", caption: $L("Import passwords"), onclick: "importPasswordsClick"},
 			{name: "printMenuItem", caption: $L("Print"), onclick: "printClick"},
 			{caption: $L("Help"), onclick: "helpClick"}
-		]}
+		]},
+		{name: "loginImporter", kind: "LoginImporter", onImportDone: "loginImportDone"}
 	],
 	//* @protected
 	constructor: function() {
@@ -708,6 +710,24 @@ enyo.kind({
 	},
 	helpClick: function() {
 		this.$.launchApplicationService.call({params: {target: "http://help.palm.com/web/index.html"}, id: "com.palm.app.help"});
+	},
+	// CSV importer trigger: read a Chrome/Google Password Manager export from
+	// /media/internal/isis-logins.csv and bulk-insert it into the logins store.
+	importPasswordsClick: function() {
+		var params = enyo.json.stringify({dontLaunch: true});
+		enyo.windows.addBannerMessage($L("Importing passwords..."), params);
+		this.$.loginImporter.run();
+	},
+	loginImportDone: function(inSender, inResult) {
+		var params = enyo.json.stringify({dontLaunch: true});
+		var msg;
+		if (inResult && inResult.error) {
+			msg = $L("Password import failed: ") + inResult.error;
+		} else {
+			msg = enyo.macroize($L("Imported {$added} password(s), skipped {$skipped} duplicate(s)"),
+				{added: inResult.added, skipped: inResult.skipped});
+		}
+		enyo.windows.addBannerMessage(msg, params);
 	},
 	showBookmarks: function() {
 		this.$.radioGroup.setValue("bookmarks");
