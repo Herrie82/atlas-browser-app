@@ -24,7 +24,7 @@ enyo.kind({
 		{kind: "Input", name: "input", flex: 2, autoCapitalize: "lowercase", changeOnKeypress: true, onchange: "inputChange"},
 		{flex: 1},
 		//{kind: "NoFocusButton", name: "prev", caption: $L("prev"), disabled: true, onclick: "findPrevious"},
-	    {kind: "NoFocusButton", name: "prev", caption: $L("prev"), disabled: true, onclick: "findPrevious", showing: false},
+	    {kind: "NoFocusButton", name: "prev", caption: $L("prev"), disabled: true, onclick: "findPrevious", showing: true},
 		{kind: "NoFocusButton", name: "next", caption: $L("next"), disabled: true, onclick: "findNext"},
 		{kind: "NoFocusButton", caption: "done", onclick: "close"}
 	],

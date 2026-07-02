@@ -29,7 +29,9 @@ enyo.kind({
 		onStopLoad: "",
 		onRefresh: "",
 		onAddressInputFocused: "",
-		onAddressInputBlurred: ""
+		onAddressInputBlurred: "",
+		onAddBookmark: "",
+		onDeleteBookmark: ""
 	},
 	components: [
 		{name: "bookmarksService", kind: "DbService", method: "search", dbKind: "com.palm.browserbookmarks:1", onSuccess: "gotBookmarksData", onFailure: "finishShowSearchResults"},
@@ -41,7 +43,9 @@ enyo.kind({
 			onStop: "doStopLoad",
 			onRefresh: "doRefresh",
 			onAddressInputFocused: "doAddressInputFocused",
-			onAddressInputBlurred: "doAddressInputBlurred"
+			onAddressInputBlurred: "doAddressInputBlurred",
+			onAddBookmark: "doAddBookmark",
+			onDeleteBookmark: "doDeleteBookmark"
 		},
 		{name: "searchPopup", kind: "Menu", lazy: false, modal: false, className: "addressbar-popup", components: [
 			{name: "providersList", className: "addressbar-providerslist", kind: "VirtualRepeater", onSetupRow: "providersListGetItem", components: [
@@ -94,6 +98,11 @@ enyo.kind({
 		}
 	},
 	showSearchResults: function() {
+		// isis: schemes (e.g. isis:about) are internal pages — no suggestions popup.
+		if (/^isis:/i.test(this._value)) {
+			this.closeSearchPopup(true);
+			return;
+		}
 		var uri = enyo.uri.parseUri(this._value);
 		if (uri.scheme && enyo.uri.isValidScheme(uri)) {
 			this.$.providersList.setShowing(false);
@@ -265,6 +274,12 @@ enyo.kind({
 		this.doLoad(i.url);
 	},
 	go: function(inSender, inValue) {
+		// isis: schemes (e.g. isis:about) are internal pages — load directly, don't search.
+		if (/^isis:/i.test(inValue)) {
+			this.doLoad(inValue);
+			this.closeSearchPopup();
+			return;
+		}
 		var uri = enyo.uri.parseUri(inValue);
 		if ((enyo.uri.isValidScheme(uri) && this.isUri(inValue, uri)) || (enyo.windowParams.allowAllSchemes && uri.scheme)) {
 			this.doLoad(inValue);

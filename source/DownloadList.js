@@ -39,7 +39,7 @@ enyo.kind({
 	components: [
 		{kind: enyo.Scroller, flex: 1, components: [
 			{name: "list", kind: enyo.VirtualRepeater, flex: 1, onSetupRow: "listSetupRow", components: [
-				{name: "item", kind: "Item", className: "dl-toaster-item", layoutKind: "HFlexLayout", align: "center", tapHighlight: true, onConfirm: "itemDelete", components: [
+				{name: "item", kind: "SwipeableItem", className: "dl-toaster-item", layoutKind: "HFlexLayout", align: "center", tapHighlight: true, onConfirm: "itemDelete", components: [
 					{name: "icon", kind: "MimeIcon", className: "dl-item-image"},
 					{name: "filename", className: "dl-item-title enyo-text-ellipsis", flex: 1},
 					{name: "progressItem", kind: "ProgressButton", flex: 1, className: "item-progress blue", animatePosition: false, onCancel: "itemCancel", components: [

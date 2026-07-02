@@ -52,6 +52,7 @@ enyo.kind({
 				onPageLoadStopped: "pageLoadStopped",
 				onFileLoad: "handleResource",
 				onAddBookmark: "addBookmark",
+				onDeleteBookmark: "deleteBookmark",
 				onAddToLauncher: "showAddtoLauncherDialog",
 				onShareLink: "shareClick",
 				onDownloadLink: "downloadClick",
@@ -452,6 +453,16 @@ enyo.kind({
 		this.$.downloadService.call({target: u});
 	},
 	deleteDownload: function(inSender, inIndex) {
+		var d = this.downloads[inIndex];
+		if (!d) {
+			return;
+		}
+		// If it's still downloading, cancel it first so it stops.
+		if (d.ticket && !d.completed && !d.aborted) {
+			this.$.cancelDownloadService.call({ticket: d.ticket});
+		}
+		this.downloads.splice(inIndex, 1);
+		this.$.downloads.setDownloads(this.downloads);
 	},
 	showClearDownloadsDialog: function() {
 		this.$.clearDownloadsDialog.openAtCenter();
@@ -543,6 +554,7 @@ enyo.kind({
 			_kind: this.$.historyService.dbKind,
 			url: inUrl,
 			title: inTitle,
+			searchText: (inTitle || "") + " " + inUrl,
 			date: (new Date()).getTime()
 		}
 		this.$.historyService.call({objects: [history]}, {method: "put"});
@@ -606,6 +618,7 @@ enyo.kind({
 			_kind: this.$.bookmarksService.dbKind,
 			title: this.$.browser.title,
 			url: this.$.browser.url,
+			searchText: (this.$.browser.title || "") + " " + (this.$.browser.url || ""),
 			date: date,
 			lastVisited: date,
 			defaultEntry: false,

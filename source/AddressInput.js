@@ -27,7 +27,9 @@ enyo.kind({
 		onAddressInputBlurred: "",
 		onGo: "",
 		onStop: "",
-		onRefresh: ""
+		onRefresh: "",
+		onAddBookmark: "",
+		onDeleteBookmark: ""
 	},
 	chrome: [
 		
@@ -42,12 +44,49 @@ enyo.kind({
 			},
 			{name: "refreshButton", kind: "CustomButton", showing: false, className: "addressbar-button refresh-button", onclick: "doRefresh"},
 			{name: "clearButton", kind: "CustomButton", showing: true, className: "addressbar-button stop-button", onmousedown: "clearInput"},
-			{name: "stopButton", kind: "CustomButton", showing: false, className: "addressbar-button stop-button", onclick: "doStop"}
-		]}
+			{name: "stopButton", kind: "CustomButton", showing: false, className: "addressbar-button stop-button", onclick: "doStop"},
+			{name: "favButton", kind: "CustomButton", toggling: true, showing: true, className: "addressbar-button fav-button", onclick: "addDeleteBookmark"}
+		]},
+		{name: "bookmarksService", kind: "DbService", method: "find", dbKind: "com.palm.browserbookmarks:1", subscribe: true, onSuccess: "gotBookmarks", onWatch: "gotBookmarks", reCallWatches: true}
 	],
 	//* @protected
 	_leftButton: "",
 	_rightButton: "clearButton",
+	bookmark: null,
+	create: function() {
+		this.inherited(arguments);
+		this.checkBookmarks();
+	},
+	// Query the bookmarks DB for the current url; the subscription keeps the star live.
+	checkBookmarks: function() {
+		var u = this.url;
+		if (!u) {
+			return;
+		}
+		this.$.bookmarksService.call({query: {where: [{prop: "url", op: "=", val: u}]}});
+	},
+	gotBookmarks: function(inSender, inResponse) {
+		if (inResponse && inResponse.results && inResponse.results.length) {
+			this.$.favButton.setDepressed(true);
+			this.bookmark = inResponse.results[0];
+		} else {
+			this.$.favButton.setDepressed(false);
+			this.bookmark = null;
+		}
+	},
+	addDeleteBookmark: function() {
+		// On webOS a single tap can deliver BOTH a touch-click and a mouse-click, firing this twice and
+		// adding two bookmarks. Debounce: ignore a second trigger within 700ms.
+		var now = (new Date()).getTime();
+		if (this._lastFavTap && (now - this._lastFavTap) < 700) { return; }
+		this._lastFavTap = now;
+		// The app owns the actual DB write; route up to BrowserApp.addBookmark/deleteBookmark.
+		if (this.bookmark) {
+			this.doDeleteBookmark(this.bookmark);
+		} else {
+			this.doAddBookmark();
+		}
+	},
 	selectInput: function() {
 		this.changeButtons();
 		this.doAddressInputFocused();
@@ -76,6 +115,7 @@ enyo.kind({
 			}
 			this.changeButtons();
 		}
+		this.checkBookmarks();
 	},
 	loadingChanged: function() {
 		this.changeButtons();
@@ -114,11 +154,12 @@ enyo.kind({
 			this.$[inButton].show();
 		}
 	},
-	go: function() { 
+	go: function() {
 		this.setLoading(true);
 		var value = this.getUserInput(true);
 		this.doGo(value);
 		document.activeElement.blur();
+		this.checkBookmarks();
 	},
 	getUserInput: function(inRaw) {
 		var value = enyo.string.trim(this.$.userinput.getValue());

@@ -27,6 +27,7 @@ enyo.kind({
 		onFileLoad: "",
 		onDownloadLink: "",
 		onAddBookmark: "",
+		onDeleteBookmark: "",
 		onAddToLauncher: "",
 		onShareLink: "",
 		onOpenBookmarks: "",
@@ -49,6 +50,7 @@ enyo.kind({
 			onStopLoad: "stopClick",
 			onRefresh: "reloadClick",
 			onAddBookmark: "doAddBookmark",
+			onDeleteBookmark: "doDeleteBookmark",
 			onAddToLauncher: "doAddToLauncher",
 			onShareLink: "doShareLink",
 			onOpenBookmarks: "doOpenBookmarks",
@@ -160,9 +162,10 @@ enyo.kind({
 		this.$.view.findInPage(this.findStr);
 	},
 	goToPrevious: function() {
+		this.$.view.findInPage(this.findStr, false);
 	},
 	goToNext: function() {
-		this.$.view.findInPage(this.findStr);
+		this.$.view.findInPage(this.findStr, true);
 	},
 	setEnableJavascript: function(inEnable) {
 		this.viewCall("setEnableJavascript", [inEnable]);
@@ -523,19 +526,18 @@ enyo.kind({
 		this.clearProgress();
 	},
 	createPageImages: function() {
-		var t = (new Date()).getTime();
-		var w = 90;
-		var h = 120;
-		var p = "/var/luna/data/browser/icons/";
-		var thumbnail = p + "thumbnail-" + t + ".png";
-		var icon32 = p + "icon32-" + t + ".png";
-		var icon64 = p + "icon64-" + t + ".png";
-		this.viewCall("saveViewToFile", [thumbnail, 0, 0, w, h]);
-		this.viewCall("generateIconFromFile", [thumbnail, icon64, 0, 0, w, h]);
-		//FIXME: resize the icon or thumbnail?
-		this.viewCall("resizeImage", [icon64, icon32, 32, 32]);
-		return {thumbnailFile: thumbnail, iconFile32: icon32, iconFile64: icon64};
-		return {};
+		// The app chrome runs in LunaSysMgr's old WebKit (system OpenSSL 0.9.8) and CANNOT load remote https
+		// favicons. So ask the WPE engine (modern TLS) to download the current site's favicon to a LOCAL file
+		// via saveViewToFile -> BrowserPageWPE::renderToFile, and show that local path. The single-arg form
+		// makes the adapter send renderToFile with the viewport rect (which the backend ignores — it fetches
+		// the favicon, not a page snapshot). /var/... is the adapter's required safe dir.
+		// The engine auto-downloads each site's favicon (PNG) into the app's OWN bundle at
+		// faviconcache/fav_<host>.png — LunaSysMgr's file-access jailer blocks the app from reading
+		// /var/luna/... but ALWAYS allows its own dir. We reference it by a RELATIVE path (resolves under the
+		// app dir, same as the chrome images). Host sanitization must match the engine's isis_favicon_dest_for.
+		var m = (this.url || "").match(/^https?:\/\/([^\/]+)/i);
+		var icon = m ? ("faviconcache/fav_" + m[1].replace(/[^A-Za-z0-9.\-]/g, "_") + ".png") : "";
+		return {thumbnailFile: icon, iconFile32: icon, iconFile64: icon};
 	},
 	deleteImages: function(inImages) {
 		for (var i=0, image; image=inImages[i]; i++) {

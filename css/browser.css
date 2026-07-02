@@ -148,6 +148,16 @@
 	background-position: 0 -31px;
 }
 
+.fav-button {
+	background: url(../images/chrome/menu-icon-bookmark.png) 0 1px no-repeat;
+	opacity: 0.5;
+}
+
+.fav-button.enyo-button-depressed {
+	background-position: 0 -31px;
+	opacity: 1;
+}
+
 .secure-lock {
 	background: url(../images/chrome/secure-lock.png) center center no-repeat;
 	width: 32px;
