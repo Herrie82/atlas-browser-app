@@ -3,6 +3,19 @@
  * which connects to our BrowserServer at /tmp/yapserver.isisbrowser.
  * Stock browser (application/x-palm-browser -> /tmp/yapserver.browser) is untouched. */
 (function () {
+    // Open a new browser card exactly once. On LunaCE an in-app openWindow ALSO fires
+    // applicationRelaunch (whose else-branch would open a duplicate card); the {_isisInApp}
+    // param doesn't reliably survive into the root window's relaunch windowParams, so we ALSO
+    // stamp a timestamp on the shared root-window object, which the relaunch handler can read.
+    window.isisOpenCard = function (params) {
+        var p = params || {};
+        p._isisInApp = 1;
+        try {
+            var rw = enyo.windows.getRootWindow();
+            if (rw) { rw.__isisInAppOpenAt = (new Date()).getTime(); }
+        } catch (e) {}
+        enyo.windows.openWindow("index.html", null, p);
+    };
     function patch() {
         if (window.enyo && enyo.BasicWebView && enyo.BasicWebView.prototype) {
             var orig = enyo.BasicWebView.prototype.create;

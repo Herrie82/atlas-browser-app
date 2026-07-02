@@ -49,6 +49,7 @@ enyo.kind({
 		if (!this.view) {
 			return;
 		}
+		this._handled = false;   // arm one-shot: a fresh menu allows exactly one action
 		var items = this.makeItems();
 		if (items) {
 			this.setItems(items);
@@ -74,6 +75,12 @@ enyo.kind({
 		return items;
 	},
 	menuItemClick: function(inSender) {
+		// PopupSelect delivers a menu-item tap twice (tap + click) on LunaCE, which fired every
+		// action twice (2 cards, 2 downloads, 2 colliding image saves). One-shot per menu open.
+		if (this._handled) {
+			return;
+		}
+		this._handled = true;
 		this.doItemClick(inSender.getValue(), this.tapInfo, this.tapPosition);
 		this.close();
 	}

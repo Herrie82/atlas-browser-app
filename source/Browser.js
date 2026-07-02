@@ -483,10 +483,10 @@ enyo.kind({
 		}
 	},
 	newCardClick: function(inTapInfo) {
-		enyo.windows.openWindow("index.html", null, {url: inTapInfo.linkUrl, _isisInApp: 1});
+		window.isisOpenCard({url: inTapInfo.linkUrl});
 	},
 	openNewCard: function() {
-		enyo.windows.openWindow("index.html", null, {_isisInApp: 1});
+		window.isisOpenCard({});
 	},
 	// --- page-level context menu actions (long-press on plain page/text, or when
 	// the engine hit-test is unavailable). These operate on the current page. ---
@@ -508,7 +508,7 @@ enyo.kind({
 		this.doReaderLink(this.url, this.title || this.url);
 	},
 	openNewCardWithIdentifier: function(inSender, inIdentifier) {
-		enyo.windows.openWindow("index.html", null, {webviewId: inIdentifier, _isisInApp: 1});
+		window.isisOpenCard({webviewId: inIdentifier});
 	},
 	copyLinkClick: function(inTapInfo) {
 		enyo.dom.setClipboard(inTapInfo.linkUrl);

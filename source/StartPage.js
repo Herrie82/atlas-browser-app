@@ -192,7 +192,7 @@ enyo.kind({
 		if (b && b.url) {
 			// Mirror BrowserApp.newCardClick, but launch the new card straight at the
 			// bookmark URL (the plain onNewCard event opens a blank card).
-			enyo.windows.openWindow("index.html", null, {target: b.url, _isisInApp: 1});
+			window.isisOpenCard({target: b.url});
 		}
 		return true;
 	},
