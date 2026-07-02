@@ -154,6 +154,11 @@ enyo.kind({
 			this.$.toaster.open();
 			this.$.radioGroup.setValue(params.toasterOpen);
 			this.$.drawerPane.selectViewByPane(params.toasterOpen);
+		} else if (params._isisInApp) {
+			// In-app "open in new card": the originating openWindow already created the card
+			// (which loads the url in rendered()). On LunaCE that internal open ALSO fires a
+			// relaunch here, so re-opening would create a duplicate card — swallow it.
+			return true;
 		} else {
 			enyo.windows.openWindow("index.html", null, params);
 			return true;
@@ -648,7 +653,7 @@ enyo.kind({
 		this.$.bookmarksService.call(undefined,{method:"delByQuery"});
 	},
 	newCardClick: function() {
-		enyo.windows.openWindow("index.html");
+		enyo.windows.openWindow("index.html", null, {_isisInApp: 1});
 	},
 	// Private browsing: open a card whose webviewId is tagged "private" — Browser.js passes it to the
 	// BS via setIdentifier, and BrowserPageWPE makes that card's network session ephemeral (no cookies,
@@ -657,7 +662,7 @@ enyo.kind({
 		// "isis-private:" is the BS per-card private signal (openUrl is the only reliably-forwarded
 		// command — setIdentifier is a no-op in the adapter). BrowserPageWPE strips it, makes this
 		// card's network session ephemeral, and loads about:blank — nothing is persisted.
-		enyo.windows.openWindow("index.html", null, {target: "isis-private:about:blank", webviewId: "private-" + (new Date()).getTime()});
+		enyo.windows.openWindow("index.html", null, {target: "isis-private:about:blank", webviewId: "private-" + (new Date()).getTime(), _isisInApp: 1});
 	},
 	shareClick: function() {
 		this.$.browser.shareLink(this.url, this.title);

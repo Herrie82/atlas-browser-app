@@ -35,7 +35,8 @@ enyo.kind({
 		{name: "bookmarksWriteService", kind: "DbService", dbKind: "com.palm.browserbookmarks:1", reCallWatches: true},
 		{name: "scroller", kind: "Scroller", flex: 1, className: "startpage-grid-scroller", components: [
 			{name: "grid", className: "startpage-grid"},
-			{name: "empty", className: "startpage-empty", showing: false, content: "No bookmarks yet"}
+			{name: "empty", className: "startpage-empty", showing: false, allowHtml: true,
+				content: $L("No bookmarks yet &mdash; bookmark a page with the &#9733;")}
 		]},
 		// Long-press context menu for a tile.
 		{name: "tileMenu", kind: "Menu", className: "startpage-tile-menu", onClose: "tileMenuClosed", components: [
@@ -106,22 +107,38 @@ enyo.kind({
 		// that resolves under the app dir; use it directly as the Image src.
 		var icon = inBookmark.iconFile32 || inBookmark.iconFile64 || inBookmark.thumbnailFile;
 		var title = inBookmark.title || inBookmark.url || "";
-		var thumbInner = icon ?
-			{kind: "Image", className: "startpage-tile-icon", src: icon} :
-			{className: "startpage-tile-letter", content: this.firstLetter(title)};
+		// The first-letter placeholder is ALWAYS rendered; it sits underneath the
+		// favicon and shows through when there's no favicon or the file is
+		// missing/broken (see iconError).
+		var thumbComponents = [
+			{className: "startpage-tile-letter", content: this.firstLetter(title)}
+		];
+		if (icon) {
+			// The favicon is layered over the letter placeholder. enyo.Image bubbles a
+			// native "error" event as "onerror"; if the file is missing/broken we hide
+			// the image (iconError) so the letter shows instead of a broken-image glyph.
+			thumbComponents.push({kind: "Image", className: "startpage-tile-icon", src: icon, onerror: "iconError"});
+		}
 		var tile = this.$.grid.createComponent({
 			kind: enyo.VFlexBox, className: "startpage-tile", align: "center", pack: "center",
 			bmIndex: inIndex, onclick: "tileClick",
 			onmousehold: "tileHold",
 			ondragstart: "tileDragStart", ondrag: "tileDrag", ondragfinish: "tileDragFinish",
 			components: [
-				{className: "startpage-tile-thumb", layoutKind: "VFlexLayout", align: "center", pack: "center", components: [
-					thumbInner
-				]},
-				{className: "startpage-tile-title enyo-text-ellipsis", content: title}
+				{className: "startpage-tile-thumb", layoutKind: "VFlexLayout", align: "center", pack: "center", components: thumbComponents},
+				{className: "startpage-tile-title", content: title}
 			]
 		}, {owner: this});
 		this.tileControls[inIndex] = tile;
+	},
+	iconError: function(inSender) {
+		// Broken/missing favicon: hide the image so the letter placeholder underneath
+		// shows through. inSender is the enyo.Image whose load failed.
+		var node = inSender && inSender.hasNode();
+		if (node) {
+			node.style.display = "none";
+		}
+		return true;
 	},
 	firstLetter: function(inText) {
 		var t = (inText || "").replace(/^\s*(https?:\/\/)?(www\.)?/i, "");
@@ -175,7 +192,7 @@ enyo.kind({
 		if (b && b.url) {
 			// Mirror BrowserApp.newCardClick, but launch the new card straight at the
 			// bookmark URL (the plain onNewCard event opens a blank card).
-			enyo.windows.openWindow("index.html", null, {target: b.url});
+			enyo.windows.openWindow("index.html", null, {target: b.url, _isisInApp: 1});
 		}
 		return true;
 	},

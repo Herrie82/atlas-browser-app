@@ -70,8 +70,8 @@
 }
 
 .startpage-grid {
-	padding: 16px 12px;
-	text-align: left;
+	padding: 18px 14px;
+	text-align: center;      /* center the last, partially-filled row */
 	font-size: 0; /* collapse inline-block whitespace gaps */
 }
 
@@ -80,17 +80,23 @@
 	vertical-align: top;
 	width: 18%;               /* ~5 tiles across */
 	margin: 1% 1%;
-	padding: 10px 6px 12px;
+	padding: 12px 6px 10px;
 	-webkit-box-sizing: border-box;
 	box-sizing: border-box;
 	text-align: center;
-	border-radius: 8px;
+	border-radius: 10px;
 	cursor: pointer;
+	/* Only animate the background; the reorder drag drives -webkit-transform
+	   directly via inline styles and must track the finger without easing. */
+	-webkit-transition: background-color 120ms ease;
+	transition: background-color 120ms ease;
 }
 
 .startpage-tile.enyo-pressed,
 .startpage-tile:active {
-	background-color: rgba(255, 255, 255, 0.12);
+	background-color: rgba(255, 255, 255, 0.14);
+	-webkit-transform: scale(0.96);
+	transform: scale(0.96);
 }
 
 /* Tile lifted and following the finger during a reorder drag. */
@@ -112,43 +118,67 @@
 }
 
 .startpage-tile-thumb {
+	position: relative;      /* anchor for the absolutely-placed icon/letter */
 	width: 64px;
 	height: 64px;
-	margin: 0 auto 8px;
-	background-color: #4a4a4a;
+	margin: 0 auto 9px;
+	-webkit-box-sizing: border-box;
+	box-sizing: border-box;
+	background-color: #3f3f3f;
+	background-image: -webkit-gradient(linear, left top, left bottom, from(#4d4d4d), to(#3a3a3a));
+	background-image: -webkit-linear-gradient(top, #4d4d4d, #3a3a3a);
 	border: 1px solid #1c1c1c;
-	border-radius: 10px;
+	border-radius: 12px;
 	overflow: hidden;
-	-webkit-box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+	-webkit-box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
+/* Favicon centred over the letter placeholder; if it fails to load JS hides it
+   (display:none) and the letter underneath shows through. */
 .startpage-tile-icon {
-	max-width: 48px;
-	max-height: 48px;
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	max-width: 44px;
+	max-height: 44px;
+	-webkit-transform: translate(-50%, -50%);
+	transform: translate(-50%, -50%);
 }
 
 .startpage-tile-letter {
-	font-size: 34px;
-	line-height: 64px;
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	font-size: 32px;
+	line-height: 62px;       /* 64px box minus 1px border top/bottom */
 	font-weight: bold;
-	color: #e8e8e8;
+	color: #ededed;
 	text-align: center;
-	width: 64px;
+	text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
 }
 
 .startpage-tile-title {
-	display: block;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;   /* readable 2-line max with ellipsis */
+	overflow: hidden;
 	max-width: 100%;
-	font-size: 13px;
+	min-height: 2.6em;       /* reserve two lines so rows align evenly */
+	line-height: 1.3;
+	font-size: 12px;
 	color: #dcdcdc;
+	word-break: break-word;
 	text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6);
 }
 
 .startpage-empty {
-	padding: 60px 20px;
+	padding: 70px 24px;
 	text-align: center;
 	font-size: 18px;
+	line-height: 1.5;
 	color: #9a9a9a;
 }
 

@@ -25,6 +25,23 @@
                         while (window.__isisReaderKeys.length > 8) { delete window.__isisReaderMap[window.__isisReaderKeys.shift()]; }
                     } catch (e) {}
                 }
+                if (dataType === "saveLogin") {
+                    // Engine captured a submitted web login form -> offer to save it (this.owner is the Browser).
+                    try {
+                        var s = (enyo.json && enyo.json.parse) ? enyo.json.parse(data) : JSON.parse(data);
+                        if (s && s.p && this.owner && this.owner.engineSaveLogin) {
+                            this.owner.engineSaveLogin(s.host || "", s.u || "", s.p);
+                        }
+                    } catch (e2) {}
+                }
+                if (dataType === "copiedText") {
+                    // Engine ferried the current web-content selection -> put it on the system clipboard.
+                    try {
+                        if (data && data.length && this.owner && this.owner.engineCopiedText) {
+                            this.owner.engineCopiedText(data);
+                        }
+                    } catch (e3) {}
+                }
                 if (enyo.log) { enyo.log("[Isis] actionData " + dataType + " url=" + (this.url || "") + " len=" + (data ? data.length : 0)); }
             };
             if (enyo.log) { enyo.log("[Isis] WebView engine -> application/x-isis-browser"); }

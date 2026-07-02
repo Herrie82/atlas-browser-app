@@ -395,9 +395,25 @@ enyo.kind({
 	},
 	// Offer to save a submitted credential. Skips the prompt if the same host+username is
 	// already stored so the user isn't nagged on every visit.
-	offerSaveLogin: function(inUser, inPass) {
+	// Engine-side hook: a web login form was submitted (host supplied by the engine).
+	engineSaveLogin: function(inHost, inUser, inPass) {
+		if (!inPass) {
+			return;
+		}
+		this.offerSaveLogin(inUser, inPass, inHost);
+	},
+	// Engine-side hook: web-content selection was copied -> place on the system clipboard.
+	engineCopiedText: function(inText) {
+		if (!inText) {
+			return;
+		}
+		enyo.dom.setClipboard(inText);
+		var params = enyo.json.stringify({dontLaunch: true});
+		enyo.windows.addBannerMessage($L("Copied to clipboard"), params);
+	},
+	offerSaveLogin: function(inUser, inPass, inHost) {
 		var url = this.url || "";
-		var host = this.hostFromUrl(url);
+		var host = inHost || this.hostFromUrl(url);
 		if (!host) {
 			return;
 		}
@@ -467,10 +483,10 @@ enyo.kind({
 		}
 	},
 	newCardClick: function(inTapInfo) {
-		enyo.windows.openWindow("index.html", null, {url: inTapInfo.linkUrl});
+		enyo.windows.openWindow("index.html", null, {url: inTapInfo.linkUrl, _isisInApp: 1});
 	},
 	openNewCard: function() {
-		enyo.windows.openWindow("index.html", null, null);
+		enyo.windows.openWindow("index.html", null, {_isisInApp: 1});
 	},
 	// --- page-level context menu actions (long-press on plain page/text, or when
 	// the engine hit-test is unavailable). These operate on the current page. ---
@@ -492,7 +508,7 @@ enyo.kind({
 		this.doReaderLink(this.url, this.title || this.url);
 	},
 	openNewCardWithIdentifier: function(inSender, inIdentifier) {
-		enyo.windows.openWindow("index.html", null, {webviewId: inIdentifier});
+		enyo.windows.openWindow("index.html", null, {webviewId: inIdentifier, _isisInApp: 1});
 	},
 	copyLinkClick: function(inTapInfo) {
 		enyo.dom.setClipboard(inTapInfo.linkUrl);
