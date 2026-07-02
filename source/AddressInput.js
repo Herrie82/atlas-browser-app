@@ -35,7 +35,7 @@ enyo.kind({
 		
 		{kind: "InputBox", layoutKind: "HFlexLayout", flex: 1, className: "enyo-tool-input", focusClassName: "enyo-tool-input-focus", spacingClassName: "enyo-tool-input-spacing", components: [
 			{name: "secureLock", kind: enyo.CustomButton, showing: false, className: "secure-lock"},
-			
+
 			{name: "userinput", kind: "Input", flex: 1, styled: false, inputType: "url", width: "100%", spellcheck: false, autocorrect: false, autoCapitalize: "lowercase", autoWordComplete: false, hint: $L("Enter URL or search terms"), selectAllOnFocus: true,
 				onfocus: "selectInput",
 				onblur: "deselectInput",
@@ -44,10 +44,13 @@ enyo.kind({
 			},
 			{name: "refreshButton", kind: "CustomButton", showing: false, className: "addressbar-button refresh-button", onclick: "doRefresh"},
 			{name: "clearButton", kind: "CustomButton", showing: true, className: "addressbar-button stop-button", onmousedown: "clearInput"},
-			{name: "stopButton", kind: "CustomButton", showing: false, className: "addressbar-button stop-button", onclick: "doStop"},
-			{name: "favButton", kind: "CustomButton", toggling: true, showing: true, className: "addressbar-button fav-button", onclick: "addDeleteBookmark"}
+			{name: "stopButton", kind: "CustomButton", showing: false, className: "addressbar-button stop-button", onclick: "doStop"}
 		]},
-		{name: "bookmarksService", kind: "DbService", method: "find", dbKind: "com.palm.browserbookmarks:1", subscribe: true, onSuccess: "gotBookmarks", onWatch: "gotBookmarks", reCallWatches: true}
+		// Bookmark star lives OUTSIDE the InputBox — inside it, the toggling button broke the box's
+		// tap-to-focus (the URL field went dead). Not "toggling"; we set depressed state ourselves.
+		{name: "favButton", kind: "CustomButton", showing: true, className: "addressbar-button fav-button", onclick: "addDeleteBookmark"},
+		// One-shot find (NOT subscribe) — a per-navigation subscription leaked watches and wedged the chrome.
+		{name: "bookmarksService", kind: "DbService", method: "find", dbKind: "com.palm.browserbookmarks:1", onSuccess: "gotBookmarks"}
 	],
 	//* @protected
 	_leftButton: "",
@@ -80,11 +83,15 @@ enyo.kind({
 		var now = (new Date()).getTime();
 		if (this._lastFavTap && (now - this._lastFavTap) < 700) { return; }
 		this._lastFavTap = now;
-		// The app owns the actual DB write; route up to BrowserApp.addBookmark/deleteBookmark.
+		// The app owns the actual DB write; route up to BrowserApp.addBookmark/deleteBookmark. Update the
+		// star optimistically (no live subscription anymore); checkBookmarks re-syncs on the next urlChanged.
 		if (this.bookmark) {
 			this.doDeleteBookmark(this.bookmark);
+			this.bookmark = null;
+			this.$.favButton.setDepressed(false);
 		} else {
 			this.doAddBookmark();
+			this.$.favButton.setDepressed(true);
 		}
 	},
 	selectInput: function() {
