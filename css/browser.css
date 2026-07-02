@@ -1,29 +1,26 @@
-//   Copyright 2012 Hewlett-Packard Development Company, L.P.
-//
-//   Licensed under the Apache License, Version 2.0 (the "License");
-//   you may not use this file except in compliance with the License.
-//   You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-//   Unless required by applicable law or agreed to in writing, software
-//   distributed under the License is distributed on an "AS IS" BASIS,
-//   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//   See the License for the specific language governing permissions and
-//   limitations under the License.
+/*
+ *   Copyright 2012 Hewlett-Packard Development Company, L.P.
+ *   Licensed under the Apache License, Version 2.0 (the "License");
+ *   you may not use this file except in compliance with the License.
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *   NOTE: CSS has no // comments — the old //-header was parsed as a selector
+ *   and silently ate the first rule (.history-popup), leaving the popup unstyled.
+ */
 
 /* Extended Back Button */
 
 .history-popup {
-	min-width: 50px;
+	min-width: 200px;
 	-webkit-box-sizing: border-box;
-	border-width: 0px;
-	-webkit-border-image: url(../images/popup.png) 0 0 0 0 stretch stretch;
-	/* end enyo-popup overrides */
-	padding: 0px;
-	margin: 0px;
-	border: 1px solid #222;
-	background: rgba(50,50,50,1);
+	padding: 4px 0;
+	/* DARK rounded popup (rows are white-on-dark). The native Heritage popup's light 9-slice border-image
+	 * wins over a plain background, so override the border-image AND force the dark bg with !important. */
+	-webkit-border-image: none !important;
+	background: #3a3a3c !important;   /* dark grey (not near-black) */
+	border: 1px solid #1a1a1a !important;
+	-webkit-border-radius: 5px !important;
+	border-radius: 5px !important;
+	-webkit-box-shadow: 0 2px 8px rgba(0,0,0,0.6);
 }
 
 .history-row {

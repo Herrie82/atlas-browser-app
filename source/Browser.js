@@ -197,7 +197,6 @@ enyo.kind({
 	},
 		setHistoryUrl: function() {
 		var newUrl = this.$.actionbar.getHistoryUrl();
-		enyo.log("setHistoryUrl newUrl = " + newUrl);
 		this.url = newUrl;
 		this.urlChanged();
  	},
@@ -221,6 +220,7 @@ enyo.kind({
 			this.$.actionbar.setUrl(this.url);
 			this.$.actionbar.setTitle(this.title);
 		}
+		if (inTitle) { this.$.actionbar.updateCurrentTitle(inUrl, inTitle); }   // patch the history entry once the real title parses (fixes "Untitled"/mismatch)
 		this.changedUrl = true;
 		this.doPageTitleChanged(this.title, this.url);
 	},

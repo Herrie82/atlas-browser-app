@@ -145,6 +145,13 @@ enyo.kind({
 		this.canGoBack = this.backHistory.length > 0;
 		this.canGoForward = this.forwardHistory.length > 0;
 	},
+	/* The history entry is captured (setCurrentPage) at ~10% load, before the real <title> parses, so it
+	 * grabs "Untitled"/a stale title. When the real title later arrives for the SAME url, patch the entry. */
+	updateCurrentTitle: function(inUrl, inTitle) {
+		if (inTitle && this.currentPage && this.currentPage.url === inUrl && this.currentPage.title !== inTitle) {
+			this.currentPage.title = inTitle;
+		}
+	},
 	goBack: function(inIndex) {
 		if (!this.buttonHeld && this.backHistory.length > 0) {
 			if (isNaN(inIndex)) {
