@@ -117,6 +117,17 @@ enyo.kind({
 		{name: "loginPicker", kind: "LoginPicker", onPick: "loginPicked"},
 		{name: "saveLoginDialog", kind: "VerticalAcceptCancelPopup", acceptCaption: $L("Save"), onResponse: "saveLoginResponse", components: [
 			{name: "saveLoginMessage", className: "browser-dialog-body enyo-text-body "}
+		]},
+		// Web-content text selection: "Select Text" highlights the word at the long-press point (engine),
+		// then this bottom toolbar lets the user extend to all and copy. Copy ferries the selection back
+		// via the engine's copiedText channel -> system clipboard. Plain control (not a Popup) so it pins
+		// to the bottom and doesn't grab modal focus over the page.
+		{name: "selectionToolbar", className: "isis-selection-toolbar", showing: false, components: [
+			{kind: enyo.HFlexBox, components: [
+				{kind: "Button", flex: 1, caption: $L("Copy"), className: "enyo-button-affirmative", onclick: "copySelectionClick"},
+				{kind: "Button", flex: 1, caption: $L("Select All"), className: "enyo-button-dark", onclick: "selectAllSelectionClick"},
+				{kind: "Button", flex: 1, caption: $L("Done"), className: "enyo-button-dark", onclick: "doneSelectionClick"}
+			]}
 		]}
     ],
 		loginsKind: "com.junoavalon.logins:1",
@@ -481,6 +492,40 @@ enyo.kind({
 		if (this[inValue]) {
 			this[inValue](inTapInfo, inPosition);
 		}
+	},
+	// --- web-content text selection ---
+	selectTextClick: function(inTapInfo, inPosition) {
+		if (!inPosition) {
+			return;
+		}
+		// engine selects the word at the long-press point and paints the native highlight
+		this.viewCall("enableSelectionMode", [inPosition.left, inPosition.top]);
+		this.$.selectionToolbar.setShowing(true);
+	},
+	copySelectionClick: function() {
+		// engine runs Copy + ferries the selection text back via copiedText -> engineCopiedText (clipboard).
+		// Leave the highlight up (it clears on the next page tap) so we don't race the async copy read.
+		this.viewCall("copy", []);
+		this.$.selectionToolbar.setShowing(false);
+		return true;
+	},
+	selectAllSelectionClick: function() {
+		this.viewCall("selectAll", []);
+		return true;
+	},
+	doneSelectionClick: function() {
+		this.viewCall("clearSelection", []);
+		this.viewCall("disableSelectionMode", []);
+		this.$.selectionToolbar.setShowing(false);
+		return true;
+	},
+	// --- web-content drag ---
+	startDragModeClick: function(inTapInfo, inPosition) {
+		// Arm drag mode: the next touch-and-drag drives the in-page element (slider/canvas/DnD) instead
+		// of scrolling; the adapter auto-clears it on release. Hint the user since it's a one-shot mode.
+		this.viewCall("setDragMode", [true]);
+		var params = enyo.json.stringify({dontLaunch: true});
+		enyo.windows.addBannerMessage($L("Drag mode: touch and drag the item"), params);
 	},
 	newCardClick: function(inTapInfo) {
 		window.isisOpenCard({url: inTapInfo.linkUrl});

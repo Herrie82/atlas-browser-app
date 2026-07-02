@@ -33,11 +33,14 @@ enyo.kind({
 		{caption: $L("Save Image"), value: "copyToPhotosClick"},
 		{caption: $L("Set Wallpaper"), value: "setWallpaperClick"},
 		{caption: $L("Share Image"), value: "shareImageClick"},
-		{caption: $L("Copy Image URL"), value: "copyImageUrlClick"}
+		{caption: $L("Copy Image URL"), value: "copyImageUrlClick"},
+		{caption: $L("Drag"), value: "startDragModeClick"}
 	],
 	// Shown when the long-press did not land on a link or image (plain page/text),
 	// or when the engine hit-test isn't available. These act on the current page.
 	pageItems: [
+		{caption: $L("Select Text"), value: "selectTextClick"},
+		{caption: $L("Drag"), value: "startDragModeClick"},
 		{caption: $L("Open In New Card"), value: "pageNewCardClick"},
 		{caption: $L("Reading Mode"), value: "pageReaderClick"},
 		{caption: $L("Share Link"), value: "pageShareClick"},
