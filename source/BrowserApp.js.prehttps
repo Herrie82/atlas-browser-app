@@ -624,10 +624,10 @@ enyo.kind({
 	// BS via setIdentifier, and BrowserPageWPE makes that card's network session ephemeral (no cookies,
 	// history, or cache persisted). The "private" substring is the agreed contract with the BS.
 	newPrivateCardClick: function() {
-		// "isis-private:" is the BS per-card private signal (openUrl is the only reliably-forwarded
+		// "atlas-private:" is the BS per-card private signal (openUrl is the only reliably-forwarded
 		// command — setIdentifier is a no-op in the adapter). BrowserPageWPE strips it, makes this
 		// card's network session ephemeral, and loads about:blank — nothing is persisted.
-		enyo.windows.openWindow("index.html", null, {target: "isis-private:about:blank", webviewId: "private-" + (new Date()).getTime()});
+		enyo.windows.openWindow("index.html", null, {target: "atlas-private:about:blank", webviewId: "private-" + (new Date()).getTime()});
 	},
 	shareClick: function() {
 		this.$.browser.shareLink(this.url, this.title);

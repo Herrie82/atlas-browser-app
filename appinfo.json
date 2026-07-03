@@ -1,11 +1,11 @@
 {
-	"id": "com.junoavalon.app.isisbrowser",
-	"version": "3.8.0",
-	"vendor": "Juno Avalon",
+	"id": "org.webosports.app.atlas",
+	"version": "0.9.0",
+	"vendor": "WebOS Ports",
 	"type": "web",
 	"main": "index.html",
-	"title": "Isis Web",
-	"keywords" : [ "web", "Browser", "Blazer", "Internet", "Juno", "Avalon", "Isis", "Osiris", "shindig", "explorer" ],
+	"title": "Atlas Web",
+	"keywords" : [ "web", "Browser", "Blazer", "Internet", "Atlas", "Osiris", "shindig", "explorer" ],
 	"icon": "icon.png",
 	"splashicon": "icon-256x256.png",
 	"uiRevision": 2,
@@ -19,7 +19,7 @@
 	"universalSearch": {
 		"dbsearch": {
 			"displayName":"Bookmarks & History",
-			"url":"com.junoavalon.app.isisbrowser",
+			"url":"org.webosports.app.atlas",
 			"launchParam":"url",
 			"launchParamDbField":"url",
 			"displayFields": ["title", "url"],

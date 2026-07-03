@@ -103,7 +103,7 @@ enyo.kind({
 		this.$.grid.render();
 	},
 	createBookmarkTile: function(inBookmark, inIndex) {
-		// In Isis the favicon is a RELATIVE path (e.g. "faviconcache/fav_<host>.png")
+		// In Atlas the favicon is a RELATIVE path (e.g. "faviconcache/fav_<host>.png")
 		// that resolves under the app dir; use it directly as the Image src.
 		var icon = inBookmark.iconFile32 || inBookmark.iconFile64 || inBookmark.thumbnailFile;
 		var title = inBookmark.title || inBookmark.url || "";
@@ -192,7 +192,7 @@ enyo.kind({
 		if (b && b.url) {
 			// Mirror BrowserApp.newCardClick, but launch the new card straight at the
 			// bookmark URL (the plain onNewCard event opens a blank card).
-			window.isisOpenCard({target: b.url});
+			window.atlasOpenCard({target: b.url});
 		}
 		return true;
 	},

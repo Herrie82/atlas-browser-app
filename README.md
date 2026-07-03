@@ -1,11 +1,11 @@
-Isis Web 
+Atlas Web 
 ============
 
-Isis Web is an Enyo(1) browser app for webOS. It's based on the stock web browser of webOS but it boasts more features than the stock browser.
+Atlas Web is an Enyo(1) browser app for webOS. It's based on the stock web browser of webOS but it boasts more features than the stock browser.
 It uses the Enyo WebView control to display web content which in turn
 uses BrowserAdapter and BrowserServer to talk to webOS WebKit.
 
-ATTENTION: Isis Web is discontinued.
+ATTENTION: Atlas Web is discontinued.
 
 # Copyright and License Information
 

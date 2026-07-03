@@ -1,4 +1,4 @@
-//   Reading Mode (reader view) for the Isis browser app.
+//   Reading Mode (reader view) for the Atlas browser app.
 //   Pure app-side: fetches the current page HTML via an enyo WebService,
 //   extracts the main article with a Readability-style heuristic, and shows
 //   a clean, large-font, distraction-free version. App-only, no BrowserServer.
@@ -59,7 +59,7 @@ enyo.kind({
 			this.$.scroller.scrollTo(0, 0);
 		}
 		// The BS extracts the CURRENT DOM on reader-open (BrowserApp triggers it) and pushes the
-		// result into window.__isisReaderMap keyed by URL — reads the consent-passed page the browser
+		// result into window.__atlasReaderMap keyed by URL — reads the consent-passed page the browser
 		// already has, no re-fetch. Poll for it (arrives async ~1s); fall back to a direct fetch only
 		// if nothing turns up (non-consent sites / no article DOM).
 		if (!this._browser && this.baseUrl) {
@@ -73,8 +73,8 @@ enyo.kind({
 		this._readerPoll(this._readerTok);
 	},
 	_norm: function(u) { return (u || "").replace(/^[a-zA-Z]+:\/\//, "").replace(/[#?].*$/, "").replace(/\/+$/, ""); },
-	_isisReaderFor: function(inUrl) {
-		var m = window.__isisReaderMap;
+	_atlasReaderFor: function(inUrl) {
+		var m = window.__atlasReaderMap;
 		if (!m || !inUrl) { return null; }
 		var n = this._norm(inUrl);
 		for (var k in m) { if (this._norm(k) === n) { return m[k]; } }
@@ -86,16 +86,16 @@ enyo.kind({
 	_readerSpinner: function(msg) {
 		return this._readerWrap(
 			'<div style="text-align:center;padding:44px 16px;">' +
-			'<div style="display:inline-block;width:32px;height:32px;border:4px solid #dddddd;border-top-color:#555555;border-radius:50%;-webkit-animation:isisSpin 0.9s linear infinite;"></div>' +
+			'<div style="display:inline-block;width:32px;height:32px;border:4px solid #dddddd;border-top-color:#555555;border-radius:50%;-webkit-animation:atlasSpin 0.9s linear infinite;"></div>' +
 			'<p style="color:#888888;margin-top:16px;">' + this.escapeHtml(msg) + '</p></div>' +
-			'<style>@-webkit-keyframes isisSpin{to{-webkit-transform:rotate(360deg)}}</style>'
+			'<style>@-webkit-keyframes atlasSpin{to{-webkit-transform:rotate(360deg)}}</style>'
 		);
 	},
 	_readerPoll: function(tok) {
 		if (tok !== this._readerTok) { return; }   // superseded by a newer reader-open — stop (no flicker)
 		// URL-keyed match first; fall back to the latest on-demand extraction (readerClick cleared it,
 		// so any value here is this reader's fresh result — robust to redirect URL differences).
-		var r = this._isisReaderFor(this.baseUrl) || window.__isisReaderLatest;
+		var r = this._atlasReaderFor(this.baseUrl) || window.__atlasReaderLatest;
 		if (r && r.html && r.html.length > 0) {
 			this.$.loadingBox.setShowing(false);
 			this.readerTitle = r.title || this.pageTitle || "";
@@ -106,7 +106,7 @@ enyo.kind({
 		// Article DOM may not be ready yet (JS/lazy render) — re-trigger extraction periodically so
 		// opening reading mode early still fills in the moment the content appears.
 		if (this._browser && (this._readerTries % 5) === 2) {
-			try { this._browser.viewCall("findInPage", ["__ISIS_EXTRACT__"]); } catch (e) {}
+			try { this._browser.viewCall("findInPage", ["__ATLAS_EXTRACT__"]); } catch (e) {}
 		}
 		if (this._readerTries++ < 80) {   // ~20s at 250ms — the article can render late on heavy pages
 			var self = this;

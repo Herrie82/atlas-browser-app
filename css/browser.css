@@ -647,7 +647,7 @@
 }
 
 /* Web-content text-selection toolbar (pinned to the bottom while a selection is active) */
-.isis-selection-toolbar {
+.atlas-selection-toolbar {
 	position: fixed;
 	left: 0;
 	right: 0;
@@ -657,6 +657,6 @@
 	padding: 8px;
 	box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.5);
 }
-.isis-selection-toolbar .enyo-button {
+.atlas-selection-toolbar .enyo-button {
 	margin: 0 4px;
 }

@@ -2,24 +2,24 @@
 //
 //   Chrome (chrome://password-manager -> Export) writes a CSV with the header:
 //       name,url,username,password
-//   This reads such a file from a fixed device path (default /media/internal/isis-logins.csv,
+//   This reads such a file from a fixed device path (default /media/internal/atlas-logins.csv,
 //   which is app-accessible), parses it (RFC-4180-ish: quoted fields, embedded commas/quotes,
 //   CRLF), dedupes by url+username against the store and within the file, and bulk-inserts the
-//   new rows into the com.junoavalon.logins:1 kind. Malformed rows are skipped.
+//   new rows into the org.webosports.logins:1 kind. Malformed rows are skipped.
 
 enyo.kind({
 	name: "LoginImporter",
 	kind: enyo.Component,
 	published: {
-		filePath: "/media/internal/isis-logins.csv",
-		dbKind: "com.junoavalon.logins:1"
+		filePath: "/media/internal/atlas-logins.csv",
+		dbKind: "org.webosports.logins:1"
 	},
 	events: {
 		//* onImportDone(inSender, inResult) where inResult = {added, skipped, total, error}
 		onImportDone: ""
 	},
 	components: [
-		{name: "loginsService", kind: "DbService", dbKind: "com.junoavalon.logins:1"}
+		{name: "loginsService", kind: "DbService", dbKind: "org.webosports.logins:1"}
 	],
 	//* @public
 	//* Kick off the import. Reads the file, then continues in gotFile().

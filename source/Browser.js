@@ -37,7 +37,7 @@ enyo.kind({
 		onReaderLink: "",
 		// called when user wants to leave the browser
 		onClose: "",
-		// user typed isis:home in the address bar -> app switches to the start-page (bookmark grid) view
+		// user typed atlas:home in the address bar -> app switches to the start-page (bookmark grid) view
 		onGoHome: ""
 	},
 	components: [
@@ -115,7 +115,7 @@ enyo.kind({
         {name: "sslCertDialog", kind: "CertificateDialog", onCertLoad: "enableViewSSLCertificate", onClose: "closeSSLCertificate"},
 		// Per-site saved logins + autofill. One-shot fill on first login-field focus; a picker only when
 		// the host has more than one saved login. (The old bottom-right toasters were replaced.)
-		{name: "loginsService", kind: "DbService", dbKind: "com.junoavalon.logins:1", reCallWatches: true},
+		{name: "loginsService", kind: "DbService", dbKind: "org.webosports.logins:1", reCallWatches: true},
 		{name: "loginPicker", kind: "LoginPicker", onPick: "loginPicked"},
 		{name: "saveLoginDialog", kind: "VerticalAcceptCancelPopup", acceptCaption: $L("Save"), onResponse: "saveLoginResponse", components: [
 			{name: "saveLoginMessage", className: "browser-dialog-body enyo-text-body "}
@@ -124,7 +124,7 @@ enyo.kind({
 		// then this bottom toolbar lets the user extend to all and copy. Copy ferries the selection back
 		// via the engine's copiedText channel -> system clipboard. Plain control (not a Popup) so it pins
 		// to the bottom and doesn't grab modal focus over the page.
-		{name: "selectionToolbar", className: "isis-selection-toolbar", showing: false, components: [
+		{name: "selectionToolbar", className: "atlas-selection-toolbar", showing: false, components: [
 			{kind: enyo.HFlexBox, components: [
 				{kind: "Button", flex: 1, caption: $L("Copy"), className: "enyo-button-affirmative", onclick: "copySelectionClick"},
 				{kind: "Button", flex: 1, caption: $L("Select All"), className: "enyo-button-dark", onclick: "selectAllSelectionClick"},
@@ -132,7 +132,7 @@ enyo.kind({
 			]}
 		]}
     ],
-		loginsKind: "com.junoavalon.logins:1",
+		loginsKind: "org.webosports.logins:1",
         changedUrl: false,
 	    isQuickRedirect: false,
 	WebKitErrors: {
@@ -300,7 +300,16 @@ enyo.kind({
 		this.$.view.insertStringAtCursor("\x02" + (inLogin.username || "") + "\x02" + (inLogin.password || ""));
 	},
 	loginsDbFailure: function(inSender, inResponse) {
-		this.log("logins db error: " + (inResponse && inResponse.errorText));
+		enyo.log("[Atlas] logins db error: " + (inResponse && (inResponse.errorText || inResponse.errorCode)));
+		// A read failure shouldn't swallow the offer: if we were mid save-offer, still prompt the user.
+		if (this.pendingSaveLogin) {
+			var p = this.pendingSaveLogin, who = p.username || p.host;
+			var msg = enyo.macroize($L("Save the password for {$user} on {$host}?"), {user: who, host: p.host});
+			this.$.saveLoginDialog.validateComponents();
+			this.$.saveLoginMessage.setContent(msg);
+			this.showPopup(this.$.saveLoginDialog);
+			enyo.log("[Atlas] loginsDbFailure: showed save-login popup anyway");
+		}
 	},
 	gotHistoryState: function(inBack, inForward) {
 		this.canGoBack = inBack;
@@ -308,9 +317,9 @@ enyo.kind({
 		this.$.actionbar.setCanGoForward(inForward);
 	},
 	goClick: function(inSender, inUrl) {
-		// isis:home -> jump back to the bookmark start-page view (handled by BrowserApp)
-		var u = (inUrl || "").replace(/^\s+|\s+$/g, "").toLowerCase();
-		if (u === "isis:home" || u === "isis://home" || u === "isis:home/") {
+		// atlas:home / atlas:start -> jump back to the bookmark start-page view (handled by BrowserApp)
+		var u = (inUrl || "").replace(/^\s+|\s+$/g, "").toLowerCase().replace(/\/+$/, "");
+		if (u === "atlas:home" || u === "atlas://home" || u === "atlas:start" || u === "atlas://start") {
 			this.doGoHome();
 			return;
 		}
@@ -414,6 +423,7 @@ enyo.kind({
 	// already stored so the user isn't nagged on every visit.
 	// Engine-side hook: a web login form was submitted (host supplied by the engine).
 	engineSaveLogin: function(inHost, inUser, inPass) {
+		enyo.log("[Atlas] engineSaveLogin host=" + inHost + " user='" + inUser + "' hasPass=" + (inPass ? 1 : 0));
 		if (!inPass) {
 			return;
 		}
@@ -435,24 +445,33 @@ enyo.kind({
 			return;
 		}
 		this.pendingSaveLogin = {host: host, url: url, username: inUser, password: inPass, title: this.title || host};
+		enyo.log("[Atlas] offerSaveLogin host=" + host + " user='" + inUser + "' -> find");
 		this.$.loginsService.call({query: {where: [{prop: "host", op: "=", val: host}]}},
 			{method: "find", onSuccess: "checkOfferSave", onFailure: "loginsDbFailure"});
 	},
 	checkOfferSave: function(inSender, inResponse) {
 		var p = this.pendingSaveLogin;
 		if (!p) {
+			enyo.log("[Atlas] checkOfferSave: no pendingSaveLogin");
 			return;
 		}
 		var results = (inResponse && inResponse.results) || [];
+		enyo.log("[Atlas] checkOfferSave host=" + p.host + " user='" + p.username + "' existing=" + results.length);
+		// Skip the prompt only if the SAME non-empty username+password is already stored (don't nag).
+		// An empty username never counts as a match; a changed password should re-prompt.
 		for (var i = 0; i < results.length; i++) {
-			if (results[i].username === p.username) {
+			if (p.username && results[i].username === p.username && results[i].password === p.password) {
+				enyo.log("[Atlas] checkOfferSave: already stored, skipping prompt");
 				this.pendingSaveLogin = null; // already saved for this host+username
 				return;
 			}
 		}
-		var msg = enyo.macroize($L("Save the password for {$user} on {$host}?"), {user: p.username, host: p.host});
+		var who = p.username || p.host;
+		var msg = enyo.macroize($L("Save the password for {$user} on {$host}?"), {user: who, host: p.host});
+		this.$.saveLoginDialog.validateComponents();
 		this.$.saveLoginMessage.setContent(msg);
 		this.showPopup(this.$.saveLoginDialog);
+		enyo.log("[Atlas] checkOfferSave: showed save-login popup");
 	},
 	saveLoginResponse: function(inSender, inAccept) {
 		var p = this.pendingSaveLogin;
@@ -534,10 +553,10 @@ enyo.kind({
 		enyo.windows.addBannerMessage($L("Drag mode: touch and drag the item"), params);
 	},
 	newCardClick: function(inTapInfo) {
-		window.isisOpenCard({url: inTapInfo.linkUrl});
+		window.atlasOpenCard({url: inTapInfo.linkUrl});
 	},
 	openNewCard: function() {
-		window.isisOpenCard({});
+		window.atlasOpenCard({});
 	},
 	// --- page-level context menu actions (long-press on plain page/text, or when
 	// the engine hit-test is unavailable). These operate on the current page. ---
@@ -559,7 +578,7 @@ enyo.kind({
 		this.doReaderLink(this.url, this.title || this.url);
 	},
 	openNewCardWithIdentifier: function(inSender, inIdentifier) {
-		window.isisOpenCard({webviewId: inIdentifier});
+		window.atlasOpenCard({webviewId: inIdentifier});
 	},
 	copyLinkClick: function(inTapInfo) {
 		enyo.dom.setClipboard(inTapInfo.linkUrl);
@@ -746,7 +765,7 @@ enyo.kind({
 		// The engine auto-downloads each site's favicon (PNG) into the app's OWN bundle at
 		// faviconcache/fav_<host>.png — LunaSysMgr's file-access jailer blocks the app from reading
 		// /var/luna/... but ALWAYS allows its own dir. We reference it by a RELATIVE path (resolves under the
-		// app dir, same as the chrome images). Host sanitization must match the engine's isis_favicon_dest_for.
+		// app dir, same as the chrome images). Host sanitization must match the engine's atlas_favicon_dest_for.
 		var m = (this.url || "").match(/^https?:\/\/([^\/]+)/i);
 		var icon = m ? ("faviconcache/fav_" + m[1].replace(/[^A-Za-z0-9.\-]/g, "_") + ".png") : "";
 		return {thumbnailFile: icon, iconFile32: icon, iconFile64: icon};

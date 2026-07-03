@@ -13,7 +13,7 @@
 //   limitations under the License.
 
 enyo.depends(
-	"source/IsisEngineOverride.js",
+	"source/AtlasEngineOverride.js",
 	"$enyo-lib/printdialog/",
 	"css/browser.css",
 	"source/ActionBar.js",

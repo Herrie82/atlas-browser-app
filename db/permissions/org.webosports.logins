@@ -1,7 +1,7 @@
 [
 	{	"type"		: "db.kind"
-	,	"object"	: "com.junoavalon.logins:1"
-	,	"caller"	: "com.junoavalon.app.isisbrowser"
+	,	"object"	: "org.webosports.logins:1"
+	,	"caller"	: "org.webosports.app.atlas"
 	,	"operations":
 		{	"create": "allow"
 		,	"read"	: "allow"

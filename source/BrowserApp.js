@@ -155,14 +155,14 @@ enyo.kind({
 			this.$.toaster.open();
 			this.$.radioGroup.setValue(params.toasterOpen);
 			this.$.drawerPane.selectViewByPane(params.toasterOpen);
-		} else if (params._isisInApp ||
-				(window.__isisInAppOpenAt && ((new Date()).getTime() - window.__isisInAppOpenAt) < 5000)) {
+		} else if (params._atlasInApp ||
+				(window.__atlasInAppOpenAt && ((new Date()).getTime() - window.__atlasInAppOpenAt) < 5000)) {
 			// In-app "open in new card": the originating openWindow already created the card
 			// (which loads the url in rendered()). On LunaCE that internal open ALSO fires a
 			// relaunch here, so re-opening would create a duplicate card — swallow it. The
-			// {_isisInApp} param doesn't reliably reach this handler's windowParams, so we also
-			// check a timestamp stamped on the shared root window by isisOpenCard().
-			window.__isisInAppOpenAt = 0;
+			// {_atlasInApp} param doesn't reliably reach this handler's windowParams, so we also
+			// check a timestamp stamped on the shared root window by atlasOpenCard().
+			window.__atlasInAppOpenAt = 0;
 			return true;
 		} else {
 			enyo.windows.openWindow("index.html", null, params);
@@ -177,7 +177,7 @@ enyo.kind({
 		// write to history (the BS session is already ephemeral, but history is the app's own DB).
 		this.isPrivate = !!(p.webviewId && p.webviewId.indexOf("private") === 0);
 		var url = p.target || p.url;
-		if (url && !this.isIsisHome(url)) {
+		if (url && !this.isAtlasHome(url)) {
 			this.setUrl(url); // this opens the browser view
 		} else if (p.webviewId) {
 			this.$.pane.selectViewByName("browser");
@@ -280,6 +280,9 @@ enyo.kind({
 		this.$.findMenuItem.setDisabled(!browser);
 		this.$.readerMenuItem.setDisabled(!browser);
 		this.$.preferencesItem.setDisabled(this.isPreferencesShowing());
+		// One-shot arm: AppMenu items fire onclick TWICE on LunaCE (touch+mouse, seen ~2.5s apart here),
+		// which opened two private cards. Arm once per menu-open; the handler disarms after the first fire.
+		this._menuArmed = true;
 	},
 	applyPreference: function(inPreference, inValue) {
 		this.log(inPreference, inValue);
@@ -391,16 +394,17 @@ enyo.kind({
 			this.applyPreference(inPreference, inValue);
 		}
 	},
-	// isis:home is our internal "show the bookmark start page" URL (like isis:about is the diagnostics page).
-	isIsisHome: function(u) {
-		u = (u || "").replace(/^\s+|\s+$/g, "").toLowerCase();
-		return u === "isis:home" || u === "isis://home" || u === "isis:home/";
+	// atlas:home / atlas:start are our internal "show the bookmark start page" URLs (like atlas:about is
+	// the diagnostics page). Both are accepted so either address resolves to the bookmark grid.
+	isAtlasHome: function(u) {
+		u = (u || "").replace(/^\s+|\s+$/g, "").toLowerCase().replace(/\/+$/, "");
+		return u === "atlas:home" || u === "atlas://home" || u === "atlas:start" || u === "atlas://start";
 	},
 	goHome: function() {
 		this.gotoView("startPage");
 	},
 	processUrlChange: function(inSender, inUrl) {
-		if (this.isIsisHome(inUrl)) { this.gotoView("startPage"); return; }
+		if (this.isAtlasHome(inUrl)) { this.gotoView("startPage"); return; }
 		this.setUrl(inUrl);
 	},
 	urlChanged: function() {
@@ -412,7 +416,7 @@ enyo.kind({
 	},
 	selectItem: function(inSender, inItem) {
 		this.closeToaster();
-		if (this.isIsisHome(inItem.url)) { this.gotoView("startPage"); return; }
+		if (this.isAtlasHome(inItem.url)) { this.gotoView("startPage"); return; }
 		this.setUrl(inItem.url);
 	},
 	gotoView: function(inName) {
@@ -599,6 +603,8 @@ enyo.kind({
 		}
 	},
 	printClick: function() {
+		if (!this._menuArmed) { return; }   // AppMenu double-fire -> would open two print dialogs
+		this._menuArmed = false;
 		this.$.printDialog.openAtCenter();
 	},
 	renderDocument: function(inSender, inJobID, inPrintParams) {
@@ -668,16 +674,20 @@ enyo.kind({
 		this.$.bookmarksService.call(undefined,{method:"delByQuery"});
 	},
 	newCardClick: function() {
-		window.isisOpenCard({});
+		window.atlasOpenCard({});
 	},
 	// Private browsing: open a card whose webviewId is tagged "private" — Browser.js passes it to the
 	// BS via setIdentifier, and BrowserPageWPE makes that card's network session ephemeral (no cookies,
 	// history, or cache persisted). The "private" substring is the agreed contract with the BS.
 	newPrivateCardClick: function() {
-		// "isis-private:" is the BS per-card private signal (openUrl is the only reliably-forwarded
+		// AppMenu items fire onclick twice (touch+mouse) -> would open two private cards. Allow exactly one
+		// per menu-open (re-armed by toggleAppMenuItems on the next open).
+		if (!this._menuArmed) { return; }
+		this._menuArmed = false;
+		// "atlas-private:" is the BS per-card private signal (openUrl is the only reliably-forwarded
 		// command — setIdentifier is a no-op in the adapter). BrowserPageWPE strips it, makes this
 		// card's network session ephemeral, and loads about:blank — nothing is persisted.
-		window.isisOpenCard({target: "isis-private:about:blank", webviewId: "private-" + (new Date()).getTime()});
+		window.atlasOpenCard({target: "atlas-private:about:blank", webviewId: "private-" + (new Date()).getTime()});
 	},
 	shareClick: function() {
 		this.$.browser.shareLink(this.url, this.title);
@@ -698,10 +708,10 @@ enyo.kind({
 			var url = b.url || this.url;
 			// On-demand: tell the BS to extract the CURRENTLY-loaded DOM's article (no wait for the
 			// full page load, and always the right card). Clear any stale entry so the reader waits
-			// for the fresh one. Result arrives via the "actionData" event into window.__isisReaderMap.
-			if (window.__isisReaderMap && url) { delete window.__isisReaderMap[url]; }
-			window.__isisReaderLatest = null;
-			try { b.viewCall("findInPage", ["__ISIS_EXTRACT__"]); } catch (e) {}
+			// for the fresh one. Result arrives via the "actionData" event into window.__atlasReaderMap.
+			if (window.__atlasReaderMap && url) { delete window.__atlasReaderMap[url]; }
+			window.__atlasReaderLatest = null;
+			try { b.viewCall("findInPage", ["__ATLAS_EXTRACT__"]); } catch (e) {}
 			this.pendingReader = {url: url, title: b.title || this.title, browser: b};
 			this.gotoView("reader");
 		}
@@ -729,11 +739,16 @@ enyo.kind({
 		}
 	},
 	helpClick: function() {
+		if (!this._menuArmed) { return; }   // AppMenu double-fire -> would launch help twice
+		this._menuArmed = false;
 		this.$.launchApplicationService.call({params: {target: "http://help.palm.com/web/index.html"}, id: "com.palm.app.help"});
 	},
 	// CSV importer trigger: read a Chrome/Google Password Manager export from
-	// /media/internal/isis-logins.csv and bulk-insert it into the logins store.
+	// /media/internal/atlas-logins.csv and bulk-insert it into the logins store.
 	importPasswordsClick: function() {
+		// AppMenu items fire onclick twice (touch+mouse) -> two "Importing..." banners. One per menu-open.
+		if (!this._menuArmed) { return; }
+		this._menuArmed = false;
 		var params = enyo.json.stringify({dontLaunch: true});
 		enyo.windows.addBannerMessage($L("Importing passwords..."), params);
 		this.$.loginImporter.run();

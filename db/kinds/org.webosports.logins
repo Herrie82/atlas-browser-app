@@ -1,6 +1,6 @@
 {
-	"id":"com.junoavalon.logins:1",
-	"owner":"com.junoavalon.app.isisbrowser",
+	"id":"org.webosports.logins:1",
+	"owner":"org.webosports.app.atlas",
 	"indexes":[	{"name":"rev","props":[{"name":"_rev"}]},
 				{"name": "host", "props": [{"name": "host"}] },
 				{"name": "url", "props": [{"name": "url"}] },

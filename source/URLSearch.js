@@ -98,8 +98,8 @@ enyo.kind({
 		}
 	},
 	showSearchResults: function() {
-		// isis: schemes (e.g. isis:about) are internal pages — no suggestions popup.
-		if (/^isis:/i.test(this._value)) {
+		// atlas: schemes (e.g. atlas:about) are internal pages — no suggestions popup.
+		if (/^atlas:/i.test(this._value)) {
 			this.closeSearchPopup(true);
 			return;
 		}
@@ -274,8 +274,8 @@ enyo.kind({
 		this.doLoad(i.url);
 	},
 	go: function(inSender, inValue) {
-		// isis: schemes (e.g. isis:about) are internal pages — load directly, don't search.
-		if (/^isis:/i.test(inValue)) {
+		// atlas: schemes (e.g. atlas:about) are internal pages — load directly, don't search.
+		if (/^atlas:/i.test(inValue)) {
 			this.doLoad(inValue);
 			this.closeSearchPopup();
 			return;
