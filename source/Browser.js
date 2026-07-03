@@ -36,7 +36,9 @@ enyo.kind({
 		// called when user picks "Reading Mode" on a link in the context menu
 		onReaderLink: "",
 		// called when user wants to leave the browser
-		onClose: ""
+		onClose: "",
+		// user typed isis:home in the address bar -> app switches to the start-page (bookmark grid) view
+		onGoHome: ""
 	},
 	components: [
 		{kind: "Control", style: "position:absolute; bottom:0px; left:0px; height:8px; width:1024px; background-color:none; z-index:120;"},
@@ -306,9 +308,13 @@ enyo.kind({
 		this.$.actionbar.setCanGoForward(inForward);
 	},
 	goClick: function(inSender, inUrl) {
-		//this.$.popup.openAtTap({centerX: 100, centerY: 100});
+		// isis:home -> jump back to the bookmark start-page view (handled by BrowserApp)
+		var u = (inUrl || "").replace(/^\s+|\s+$/g, "").toLowerCase();
+		if (u === "isis:home" || u === "isis://home" || u === "isis:home/") {
+			this.doGoHome();
+			return;
+		}
 		this.setUrl(inUrl);
-		//this.showHideTitle(true);
 	},
 	browserTap: function(inSender, inPosition, inEvent, inTapInfo) {
 	},

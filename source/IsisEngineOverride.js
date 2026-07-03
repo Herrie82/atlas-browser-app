@@ -12,7 +12,15 @@
         p._isisInApp = 1;
         try {
             var rw = enyo.windows.getRootWindow();
-            if (rw) { rw.__isisInAppOpenAt = (new Date()).getTime(); }
+            if (rw) {
+                var now = (new Date()).getTime();
+                // Debounce: LunaCE delivers a button/menu tap as BOTH a tap and a click, firing the
+                // open twice within a few ms -> two cards. Swallow a second call inside 700ms.
+                // (__isisLastOpen is separate from __isisInAppOpenAt, which the relaunch handler clears.)
+                if (rw.__isisLastOpen && (now - rw.__isisLastOpen) < 700) { return; }
+                rw.__isisLastOpen = now;
+                rw.__isisInAppOpenAt = now;   // for the relaunch-handler duplicate guard
+            }
         } catch (e) {}
         enyo.windows.openWindow("index.html", null, p);
     };

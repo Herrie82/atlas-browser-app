@@ -62,7 +62,8 @@ enyo.kind({
 				onClose: "browserClosed",
 				onShow: "browserShown",
 				onHide: "browserHidden",
-				onReaderLink: "readerLinkHandler"
+				onReaderLink: "readerLinkHandler",
+				onGoHome: "goHome"
 			},
 			{name: "reader", kind: "ReaderView",
 				onClose: "readerClosed",
@@ -176,7 +177,7 @@ enyo.kind({
 		// write to history (the BS session is already ephemeral, but history is the app's own DB).
 		this.isPrivate = !!(p.webviewId && p.webviewId.indexOf("private") === 0);
 		var url = p.target || p.url;
-		if (url) {
+		if (url && !this.isIsisHome(url)) {
 			this.setUrl(url); // this opens the browser view
 		} else if (p.webviewId) {
 			this.$.pane.selectViewByName("browser");
@@ -390,7 +391,16 @@ enyo.kind({
 			this.applyPreference(inPreference, inValue);
 		}
 	},
+	// isis:home is our internal "show the bookmark start page" URL (like isis:about is the diagnostics page).
+	isIsisHome: function(u) {
+		u = (u || "").replace(/^\s+|\s+$/g, "").toLowerCase();
+		return u === "isis:home" || u === "isis://home" || u === "isis:home/";
+	},
+	goHome: function() {
+		this.gotoView("startPage");
+	},
 	processUrlChange: function(inSender, inUrl) {
+		if (this.isIsisHome(inUrl)) { this.gotoView("startPage"); return; }
 		this.setUrl(inUrl);
 	},
 	urlChanged: function() {
@@ -401,8 +411,9 @@ enyo.kind({
 		}
 	},
 	selectItem: function(inSender, inItem) {
-		this.setUrl(inItem.url);
 		this.closeToaster();
+		if (this.isIsisHome(inItem.url)) { this.gotoView("startPage"); return; }
+		this.setUrl(inItem.url);
 	},
 	gotoView: function(inName) {
 		this.closeToaster();
