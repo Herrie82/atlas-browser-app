@@ -130,6 +130,7 @@ enyo.kind({
 			//{caption: $L("Find on Page"), onclick: "showFindOnPage"},
 			{name: "findMenuItem", caption: $L("Find on Page"), onclick: "showFindOnPage"},
 			{name: "readerMenuItem", caption: $L("Reading Mode"), onclick: "readerClick"},
+			{name: "translateMenuItem", caption: $L("Translate Page"), onclick: "translateClick"},
 			{name: "privateCardItem", caption: $L("New Private Card"), onclick: "newPrivateCardClick"},
 			{name: "preferencesItem", caption: $L("Preferences"), onclick: "preferencesClick"},
 			{name: "passwordsItem", caption: $L("Passwords"), onclick: "passwordsClick"},
@@ -286,6 +287,7 @@ enyo.kind({
 		this.$.printMenuItem.setDisabled(!browser || this.isBrowserLoading());
 		this.$.findMenuItem.setDisabled(!browser);
 		this.$.readerMenuItem.setDisabled(!browser);
+		this.$.translateMenuItem.setDisabled(!browser || this.isBrowserLoading());
 		this.$.preferencesItem.setDisabled(this.isPreferencesShowing());
 		// One-shot arm: AppMenu items fire onclick TWICE on LunaCE (touch+mouse, seen ~2.5s apart here),
 		// which opened two private cards. Arm once per menu-open; the handler disarms after the first fire.
@@ -713,6 +715,30 @@ enyo.kind({
 	},
 	preferencesClick: function() {
 		this.gotoView("preferences");
+	},
+	// Open the current page through Google Translate (target = device language). AppMenu double-fires
+	// on LunaCE, so guard with the one-shot _menuArmed flag.
+	translateClick: function() {
+		if (!this._menuArmed) { return; }
+		this._menuArmed = false;
+		if (!this.isBrowserShowing()) { return; }
+		var url = this.$.browser.getUrl ? this.$.browser.getUrl() : this.$.browser.url;
+		if (!url || !(/^https?:\/\//i).test(url)) { return; }
+		// don't re-wrap an already-translated page
+		if (url.indexOf("translate.goog") >= 0 || url.indexOf("translate.google.com/translate") >= 0) { return; }
+		var turl = "https://translate.google.com/translate?sl=auto&tl=" + this.translateTargetLang() +
+			"&u=" + encodeURIComponent(url);
+		this.setUrl(turl);
+	},
+	translateTargetLang: function() {
+		try {
+			if (enyo.g11n && enyo.g11n.currentLocale) {
+				var loc = enyo.g11n.currentLocale();
+				var l = loc && loc.getLanguage ? loc.getLanguage() : null;
+				if (l) { return l; }
+			}
+		} catch (e) {}
+		return "en";
 	},
 	readerClick: function() {
 		if (this.isBrowserShowing()) {
