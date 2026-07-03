@@ -1,0 +1,12 @@
+[
+	{	"type"		: "db.kind"
+	,	"object"	: "org.webosports.autofill:1"
+	,	"caller"	: "org.webosports.app.atlas"
+	,	"operations":
+		{	"create": "allow"
+		,	"read"	: "allow"
+		,	"update": "allow"
+		,	"delete": "allow"
+		}
+	}
+]

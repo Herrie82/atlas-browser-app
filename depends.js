@@ -27,6 +27,8 @@ enyo.depends(
 	"source/LoginPicker.js",
 	"source/PasswordList.js",
 	"source/PasswordEditDialog.js",
+	"source/AutofillList.js",
+	"source/AutofillEditDialog.js",
 	"source/LoginImporter.js",
 	"source/Browser.js",
 	"source/BookmarkList.js",

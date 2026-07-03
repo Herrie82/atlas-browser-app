@@ -1,0 +1,9 @@
+{
+	"id":"org.webosports.autofill:1",
+	"owner":"org.webosports.app.atlas",
+	"indexes":[	{"name":"rev","props":[{"name":"_rev"}]},
+				{"name": "label", "props": [{"name": "label"}] },
+				{"name": "fieldtype", "props": [{"name": "fieldtype"}] },
+				{"name": "searchText", "props": [{"name": "searchText", "tokenize": "all", "collate": "primary"}] } ],
+	"sync": true
+}

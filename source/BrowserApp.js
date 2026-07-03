@@ -84,7 +84,8 @@ enyo.kind({
 						{kind: "RadioButton", value: "bookmarks", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-bookmarks.png", onclick: "showBookmarks"},
 						{kind: "RadioButton", value: "history", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-history.png", onclick: "showHistory"},
 						{kind: "RadioButton", value: "downloads", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-downloads.png", onclick: "showDownloads"},
-						{kind: "RadioButton", value: "passwords", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-passwords.png", onclick: "showPasswords"}
+						{kind: "RadioButton", value: "passwords", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-passwords.png", onclick: "showPasswords"},
+						{kind: "RadioButton", value: "autofill", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-passwords.png", onclick: "showAutofill"}
 					]}
 				]},
 				{name: "drawerPane", kind: "Pane", flex: 1, lazyViews: [
@@ -112,12 +113,18 @@ enyo.kind({
 					{name: "passwords", kind: "PasswordList",
 						onClose: "closeToaster",
 						onEditPassword: "showEditPasswordDialog"
+					},
+					{name: "autofill", kind: "AutofillList",
+						onClose: "closeToaster",
+						onEditAutofill: "showEditAutofillDialog",
+						onAddAutofill: "addAutofillEntry"
 					}
 				]}
 			]}
 		]},
 		{kind: "BookmarkDialog", onAccept: "bookmarkAccept", onBeforeOpen: "setupBookmarkDialog"},
 		{name: "passwordEditDialog", kind: "PasswordEditDialog"},
+		{name: "autofillEditDialog", kind: "AutofillEditDialog"},
 		{name: "downloadError", kind: "BrowserPrompt", caption: $L("Cannot open MIME type"), message: ""},
 		{name: "clearDownloadsDialog", kind: "BrowserPrompt",
 			caption: $L("Are you sure you want to clear the Downloads list?"),
@@ -135,6 +142,7 @@ enyo.kind({
 			{name: "preferencesItem", caption: $L("Preferences"), onclick: "preferencesClick"},
 			{name: "passwordsItem", caption: $L("Passwords"), onclick: "passwordsClick"},
 				{name: "importLoginsItem", caption: $L("Import passwords"), onclick: "importPasswordsClick"},
+			{name: "autofillItem", caption: $L("Autofill"), onclick: "autofillClick"},
 			{name: "printMenuItem", caption: $L("Print"), onclick: "printClick"},
 			{caption: $L("Help"), onclick: "helpClick"}
 		]},
@@ -824,6 +832,27 @@ enyo.kind({
 		this._menuArmed = false;
 		this.$.toaster.open();
 		this.showPasswords();
+	},
+	showAutofill: function() {
+		this.$.radioGroup.setValue("autofill");
+		this.$.drawerPane.selectViewByName("autofill");
+	},
+	// Open the autofill manager (toaster drawer) from the app menu. One per menu-open (double-fire guard).
+	autofillClick: function() {
+		if (!this._menuArmed) { return; }
+		this._menuArmed = false;
+		this.$.toaster.open();
+		this.showAutofill();
+	},
+	// Edit an existing autofill entry (top-level dialog, kept outside the toaster).
+	showEditAutofillDialog: function(inSender, inItem) {
+		this.$.autofillEditDialog.setItem(inItem);
+		this.$.autofillEditDialog.openAtCenter();
+	},
+	// Add a new autofill entry (blank item -> the dialog hides its Delete button).
+	addAutofillEntry: function() {
+		this.$.autofillEditDialog.setItem({});
+		this.$.autofillEditDialog.openAtCenter();
 	},
 	closeToaster: function() {
 		this.$.toaster.close();

@@ -40,6 +40,10 @@ modern web-platform support, on the original hardware (Adreno 220, Cortex-A8, ke
 - **Search on Bookmarks / History / Passwords** — via db8's `searchText` full-text index (matches
   title **or** URL).
 - **Save-login prompt** — offers to store username/password on form submit.
+- **Form autofill manager** — store/search/edit/delete personal-info values (name, email, phone,
+  address, …) in `org.webosports.autofill:1`, from the app menu / toaster tab. (Auto-capture on submit
+  and auto-fill on field focus are the engine-side next step.)
+- **Translate page** — opens the current page through Google Translate in your device language.
 - **Address-bar autocomplete** — history/bookmark suggestions as you type.
 - **SSL / HTTP-auth dialogs** — certificate and basic-auth prompts.
 - **Private browsing** card (ephemeral session, in-memory cookies/cache/history).
@@ -65,7 +69,9 @@ modern web-platform support, on the original hardware (Adreno 220, Cortex-A8, ke
 - **Network:** expand the tracker/beacon blocklist, verify HTTP disk cache is enabled, optional
   data-saver (defer images).
 - **Scrolling perf:** async axis-event scroll done; strip-readback optimization pending.
-- Tabs; gesture navigation; form autofill.
+- Autofill engine hooks: auto-capture form values on submit + auto-fill matching fields on focus
+  (the manager/storage is done; matching is the remaining piece).
+- Tabs; gesture navigation.
 - GitHub repo rename `isis → atlas` + push.
 
 ## Build & deploy (developer notes)
