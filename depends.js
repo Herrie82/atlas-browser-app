@@ -25,6 +25,8 @@ enyo.depends(
 	"source/AutoInsertTool.js",
 	"source/LoginSelect.js",
 	"source/LoginPicker.js",
+	"source/PasswordList.js",
+	"source/PasswordEditDialog.js",
 	"source/LoginImporter.js",
 	"source/Browser.js",
 	"source/BookmarkList.js",

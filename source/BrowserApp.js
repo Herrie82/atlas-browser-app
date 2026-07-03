@@ -76,14 +76,15 @@ enyo.kind({
 				onClose: "backHandler"
 			}
 		]},
-		{kind: enyo.Toaster, flyInFrom: "right", style: "top: 0px; bottom: 0px", lazy: false, components: [
+		{kind: enyo.Toaster, flyInFrom: "right", dismissWithClick: false, style: "top: 0px; bottom: 0px", lazy: false, components: [
 			{className: "enyo-sliding-view-shadow"},
 			{kind: enyo.VFlexBox, flex: 1, width: "320px", height: "100%", components: [
 				{kind: "Header", className: "enyo-header-dark", components: [
 					{kind: "RadioGroup", flex: 1, components: [
 						{kind: "RadioButton", value: "bookmarks", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-bookmarks.png", onclick: "showBookmarks"},
 						{kind: "RadioButton", value: "history", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-history.png", onclick: "showHistory"},
-						{kind: "RadioButton", value: "downloads", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-downloads.png", onclick: "showDownloads"}
+						{kind: "RadioButton", value: "downloads", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-downloads.png", onclick: "showDownloads"},
+						{kind: "RadioButton", value: "passwords", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-passwords.png", onclick: "showPasswords"}
 					]}
 				]},
 				{name: "drawerPane", kind: "Pane", flex: 1, lazyViews: [
@@ -107,11 +108,16 @@ enyo.kind({
 						onClearAll: "showClearDownloadsDialog",
 						onClose: "closeToaster",
 						onShow: "downloadListShown"
+					},
+					{name: "passwords", kind: "PasswordList",
+						onClose: "closeToaster",
+						onEditPassword: "showEditPasswordDialog"
 					}
 				]}
 			]}
 		]},
 		{kind: "BookmarkDialog", onAccept: "bookmarkAccept", onBeforeOpen: "setupBookmarkDialog"},
+		{name: "passwordEditDialog", kind: "PasswordEditDialog"},
 		{name: "downloadError", kind: "BrowserPrompt", caption: $L("Cannot open MIME type"), message: ""},
 		{name: "clearDownloadsDialog", kind: "BrowserPrompt",
 			caption: $L("Are you sure you want to clear the Downloads list?"),
@@ -126,7 +132,8 @@ enyo.kind({
 			{name: "readerMenuItem", caption: $L("Reading Mode"), onclick: "readerClick"},
 			{name: "privateCardItem", caption: $L("New Private Card"), onclick: "newPrivateCardClick"},
 			{name: "preferencesItem", caption: $L("Preferences"), onclick: "preferencesClick"},
-			{name: "importLoginsItem", caption: $L("Import passwords"), onclick: "importPasswordsClick"},
+			{name: "passwordsItem", caption: $L("Passwords"), onclick: "passwordsClick"},
+				{name: "importLoginsItem", caption: $L("Import passwords"), onclick: "importPasswordsClick"},
 			{name: "printMenuItem", caption: $L("Print"), onclick: "printClick"},
 			{caption: $L("Help"), onclick: "helpClick"}
 		]},
@@ -625,6 +632,11 @@ enyo.kind({
 	addToLauncher: function(inTitle, inUrl, inIcons, inId) {
 		this.$.addToLauncherService.call({id: enyo.fetchAppId(), icon: inIcons.iconFile64, title: inTitle, params: {url: inUrl}});
 	},
+	// Open the top-level password edit dialog (kept outside the Toaster so its buttons don't dismiss it).
+	showEditPasswordDialog: function(inSender, inItem) {
+		this.$.passwordEditDialog.setItem(inItem);
+		this.$.passwordEditDialog.openAtCenter();
+	},
 	showEditBookmarkDialog: function(inSender, inBookmark) {
 		this.$.bookmarkDialog.setTitle(inBookmark.title);
 		this.$.bookmarkDialog.setUrl(inBookmark.url);
@@ -775,6 +787,17 @@ enyo.kind({
 	showDownloads: function() {
 		this.$.radioGroup.setValue("downloads");
 		this.$.drawerPane.selectViewByName("downloads");
+	},
+	showPasswords: function() {
+		this.$.radioGroup.setValue("passwords");
+		this.$.drawerPane.selectViewByName("passwords");
+	},
+	// Open the passwords manager (toaster drawer) from the app menu. One per menu-open (double-fire guard).
+	passwordsClick: function() {
+		if (!this._menuArmed) { return; }
+		this._menuArmed = false;
+		this.$.toaster.open();
+		this.showPasswords();
 	},
 	closeToaster: function() {
 		this.$.toaster.close();

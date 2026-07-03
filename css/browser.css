@@ -660,3 +660,19 @@
 .atlas-selection-toolbar .enyo-button {
 	margin: 0 4px;
 }
+
+/* ---- Atlas list polish: tighter search spacing + shorter rows (search box keeps its default pill) ---- */
+.atlas-pw-search {
+	padding: 4px 8px;
+}
+.atlas-pw-row {
+	min-height: 0 !important;
+	padding-top: 6px !important;
+	padding-bottom: 6px !important;
+}
+
+/* Smaller "Show password" checkbox in the password edit dialog */
+.atlas-pw-showpass .enyo-checkbox {
+	-webkit-transform: scale(0.68);
+	-webkit-transform-origin: center left;
+}

@@ -26,6 +26,11 @@ enyo.kind({
 	},
 	components: [
 		{name: "bookmarksService", kind: "DbService", dbKind: "com.palm.browserbookmarks:1", reCallWatches: true, method: "find", onSuccess: "gotBookmarksData", subscribe: true, onWatch:"refreshList"},
+		{className: "box-center atlas-pw-search", components: [
+			{name: "searchField", kind: "RoundedSearchInput", hint: $L("Search bookmarks"),
+				autoCapitalize: "lowercase", autocorrect: false, spellcheck: false, autoWordComplete: false,
+				onchange: "processOnSearch", onCancel: "processOnCancel", keypressInputDelay: 300}
+		]},
 		{name: "list", kind: "DbList", flex: 1, desc: true, onQuery:"bookmarksQuery", onSetupRow: "listSetupRow", components: [
 			{name: "item", kind: "SwipeableItem", className: "toaster-item", layoutKind: "HFlexLayout", align: "center", tapHighlight: true, onclick: "itemClick", onConfirm: "deleteItem", components: [
 				{className: "item-thumb-container", components: [
@@ -69,8 +74,22 @@ enyo.kind({
 	gotBookmarksData: function(inSender, inResponse, inRequest) {
 		this.$.list.queryResponse(inResponse,inRequest);
 	},
+	//* When searching, let db8 filter via the full-text `searchText` index (matches title + url),
+	//* so DbList pagination stays consistent (client-side filtering of paged results breaks it).
 	bookmarksQuery: function(inSender, inQuery) {
+		if (this.filterString) {
+			inQuery.where = [{prop: "searchText", op: "?", val: this.filterString, collate: "primary"}];
+			return this.$.bookmarksService.call({query: inQuery}, {method: "search"});
+		}
 		return this.$.bookmarksService.call({query:inQuery});
+	},
+	processOnSearch: function(inSender, inEvent, inValue) {
+		this.filterString = (inValue && inValue.length) ? inValue : undefined;
+		this.$.list.punt();
+	},
+	processOnCancel: function() {
+		this.filterString = undefined;
+		this.$.list.punt();
 	},
 	refreshList: function(inSender, inWatch) {
 		this.$.list.refresh();

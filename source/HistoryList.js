@@ -24,6 +24,11 @@ enyo.kind({
 	},
 	components: [
 		{name: "historyService", kind: "DbService", dbKind: "com.palm.browserhistory:1", reCallWatches: true, method: "find", onSuccess: "gotHistoryData", subscribe: true, onWatch:"refreshList"},
+		{className: "box-center atlas-pw-search", components: [
+			{name: "searchField", kind: "RoundedSearchInput", hint: $L("Search history"),
+				autoCapitalize: "lowercase", autocorrect: false, spellcheck: false, autoWordComplete: false,
+				onchange: "processOnSearch", onCancel: "processOnCancel", keypressInputDelay: 300}
+		]},
 		{name:"list", kind:"DbList", flex:1, onQuery:"historyQuery", onSetupRow: "listSetupRow", desc:true, components: [
 			{name: "divider", kind: "Divider", showing: false},
 			{name: "item", kind: "SwipeableItem", layoutKind: "HFlexLayout", tapHighlight: true, onclick: "itemClick", onConfirm: "deleteItem", components: [
@@ -39,12 +44,26 @@ enyo.kind({
 			{flex: 1, kind: "Control"}
 		]}
 	],
+	//* When searching, let db8 filter via the full-text `searchText` index (matches title + url).
+	//* Client-side filtering of DbList's paged results breaks pagination, so do it in the query.
 	historyQuery: function(inSender, inQuery) {
+		if (this.filterString) {
+			inQuery.where = [{prop: "searchText", op: "?", val: this.filterString, collate: "primary"}];
+			return this.$.historyService.call({query: inQuery}, {method: "search"});
+		}
 		inQuery.orderBy = "date";
 		return this.$.historyService.call({query:inQuery});
 	},
 	gotHistoryData: function(inSender, inResponse, inRequest) {
 		this.$.list.queryResponse(inResponse,inRequest);
+	},
+	processOnSearch: function(inSender, inEvent, inValue) {
+		this.filterString = (inValue && inValue.length) ? inValue : undefined;
+		this.$.list.punt();
+	},
+	processOnCancel: function() {
+		this.filterString = undefined;
+		this.$.list.punt();
 	},
 	getDivider: function(inItem) {
 		var now = new Date(), then = new Date(inItem.date),ago;
