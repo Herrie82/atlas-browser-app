@@ -120,17 +120,16 @@ enyo.kind({
 		{name: "saveLoginDialog", kind: "VerticalAcceptCancelPopup", acceptCaption: $L("Save"), onResponse: "saveLoginResponse", components: [
 			{name: "saveLoginMessage", className: "browser-dialog-body enyo-text-body "}
 		]},
-		// Web-content text selection: "Select Text" highlights the word at the long-press point (engine),
-		// then this bottom toolbar lets the user extend to all and copy. Copy ferries the selection back
-		// via the engine's copiedText channel -> system clipboard. Plain control (not a Popup) so it pins
-		// to the bottom and doesn't grab modal focus over the page.
-		{name: "selectionToolbar", className: "atlas-selection-toolbar", showing: false, components: [
-			{kind: enyo.HFlexBox, components: [
-				{kind: "Button", flex: 1, caption: $L("Copy"), className: "enyo-button-affirmative", onclick: "copySelectionClick"},
-				{kind: "Button", flex: 1, caption: $L("Select All"), className: "enyo-button-dark", onclick: "selectAllSelectionClick"},
-				{kind: "Button", flex: 1, caption: $L("Done"), className: "enyo-button-dark", onclick: "doneSelectionClick"}
-			]}
-		]}
+		// Web-content text selection (legacy-style): press a word -> engine selects it and reports the
+		// start/end rects on the "selectionBounds" channel; we pin the two drag markers (arrows) at the
+		// selection ends and a Copy popover above it. Copy ferries the selection back via copiedText ->
+		// clipboard. Markers are position:fixed (reported coords are window/pageX,Y space).
+		{name: "selStart", kind: "Image", src: "images/webkit/topmarker.png", showing: false,
+			style: "position:fixed; z-index:1000; width:18px; height:15px;"},
+		{name: "selEnd", kind: "Image", src: "images/webkit/bottommarker.png", showing: false,
+			style: "position:fixed; z-index:1000; width:18px; height:15px;"},
+		{name: "selPopover", kind: "CustomButton", className: "atlas-select-popover", showing: false,
+			style: "position:fixed; z-index:1001;", content: $L("Copy"), onclick: "copySelectionClick"}
     ],
 		loginsKind: "org.webosports.logins:1",
         changedUrl: false,
@@ -326,6 +325,11 @@ enyo.kind({
 		this.setUrl(inUrl);
 	},
 	browserTap: function(inSender, inPosition, inEvent, inTapInfo) {
+		// a tap on the page dismisses an active text selection (markers + popover)
+		if (this._selBounds) {
+			this.viewCall("clearSelection", []);
+			this.hideSelectionUI();
+		}
 	},
 	showPopup: function(inPopup) {
 		var w = enyo.fetchControlSize(this).w;
@@ -510,6 +514,12 @@ enyo.kind({
 		if (info.editable) {
 			return;
 		}
+		// Plain text (no link/image): select the word directly — legacy-style, no "Select Text" menu step.
+		if (!info.isLink && !info.isImage) {
+			this._selAnchor = {left: inEvent.pageX, top: inEvent.pageY};
+			this.viewCall("enableSelectionMode", [inEvent.pageX, inEvent.pageY]);
+			return true;
+		}
 		this.$.context.openAtTap(inEvent, info);
 		return true;
 	},
@@ -518,20 +528,53 @@ enyo.kind({
 			this[inValue](inTapInfo, inPosition);
 		}
 	},
-	// --- web-content text selection ---
+	// --- web-content text selection (legacy-style markers + Copy popover) ---
 	selectTextClick: function(inTapInfo, inPosition) {
 		if (!inPosition) {
 			return;
 		}
-		// engine selects the word at the long-press point and paints the native highlight
+		// engine selects the word at the point, paints the native highlight, and reports the selection
+		// rects back on "selectionBounds" (-> engineSelectionBounds) which pins the markers + popover.
 		this.viewCall("enableSelectionMode", [inPosition.left, inPosition.top]);
-		this.$.selectionToolbar.setShowing(true);
+	},
+	// Engine-side hook: selection changed -> {sx,sy,sh,ex,ey,len} in window/pageX,Y coords. Pin the two
+	// drag markers at the ends and the Copy popover above the start.
+	engineSelectionBounds: function(inData) {
+		var b;
+		try { b = enyo.json.parse(inData); } catch (e) { return; }
+		if (!b || !b.len) { this.hideSelectionUI(); return; }
+		this._selBounds = b;
+		try {
+			var vr = this.$.view.hasNode() ? this.$.view.node.getBoundingClientRect() : null;
+			enyo.warn("[Atlas] selBounds=" + inData + " anchor=" + enyo.json.stringify(this._selAnchor || null) +
+				" viewTop=" + (vr ? Math.round(vr.top) : "?") + " viewLeft=" + (vr ? Math.round(vr.left) : "?"));
+		} catch (eL) {}
+		// top marker (18x15): its bottom points at the selection start
+		this.$.selStart.applyStyle("left", (b.sx - 9) + "px");
+		this.$.selStart.applyStyle("top", (b.sy - 15) + "px");
+		this.$.selStart.setShowing(true);
+		// bottom marker: its top points at the selection end
+		this.$.selEnd.applyStyle("left", (b.ex - 9) + "px");
+		this.$.selEnd.applyStyle("top", b.ey + "px");
+		this.$.selEnd.setShowing(true);
+		// Copy bubble centered above the selection (clamp on-screen). Single-line selection uses the
+		// midpoint of start/end; multi-line falls back to above the start.
+		var midX = (b.ey - b.sy < b.sh + 4) ? Math.round((b.sx + b.ex) / 2) : b.sx;
+		this.$.selPopover.applyStyle("left", Math.max(4, midX - 34) + "px");
+		this.$.selPopover.applyStyle("top", Math.max(4, b.sy - 46) + "px");
+		this.$.selPopover.setShowing(true);
+	},
+	hideSelectionUI: function() {
+		this._selBounds = null;
+		if (this.$.selStart) { this.$.selStart.setShowing(false); }
+		if (this.$.selEnd) { this.$.selEnd.setShowing(false); }
+		if (this.$.selPopover) { this.$.selPopover.setShowing(false); }
 	},
 	copySelectionClick: function() {
 		// engine runs Copy + ferries the selection text back via copiedText -> engineCopiedText (clipboard).
-		// Leave the highlight up (it clears on the next page tap) so we don't race the async copy read.
 		this.viewCall("copy", []);
-		this.$.selectionToolbar.setShowing(false);
+		this.hideSelectionUI();
+		this.viewCall("clearSelection", []);
 		return true;
 	},
 	selectAllSelectionClick: function() {
@@ -541,7 +584,7 @@ enyo.kind({
 	doneSelectionClick: function() {
 		this.viewCall("clearSelection", []);
 		this.viewCall("disableSelectionMode", []);
-		this.$.selectionToolbar.setShowing(false);
+		this.hideSelectionUI();
 		return true;
 	},
 	// --- web-content drag ---
@@ -692,6 +735,7 @@ enyo.kind({
 		this.$.actionbar.setProgress(0);
 	},
 	loadStarted: function() {
+	   this.hideSelectionUI();
 	   this._lastProgress = 0;
 	   if (this._timeoutHandle != null) {
 		   clearTimeout(this._timeoutHandle);

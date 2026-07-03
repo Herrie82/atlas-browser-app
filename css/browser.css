@@ -676,3 +676,33 @@
 	-webkit-transform: scale(0.68);
 	-webkit-transform-origin: center left;
 }
+
+/* Legacy-style text-selection Copy bubble (compact dark pill with a downward tail, above the selection) */
+.atlas-select-popover {
+	background: #1f1f21;
+	border: 1px solid #000;
+	border-radius: 6px;
+	padding: 6px 16px;
+	font-size: 15px;
+	font-weight: bold;
+	color: #fff;
+	text-align: center;
+	white-space: nowrap;
+	-webkit-box-shadow: 0 2px 8px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.08);
+	background-image: -webkit-gradient(linear, left top, left bottom, from(#3a3a3c), to(#1f1f21));
+}
+.atlas-select-popover:active {
+	background-image: -webkit-gradient(linear, left top, left bottom, from(#1f1f21), to(#3a3a3c));
+}
+/* downward tail */
+.atlas-select-popover:after {
+	content: "";
+	position: absolute;
+	left: 50%;
+	bottom: -6px;
+	margin-left: -6px;
+	width: 0; height: 0;
+	border-left: 6px solid transparent;
+	border-right: 6px solid transparent;
+	border-top: 6px solid #1f1f21;
+}

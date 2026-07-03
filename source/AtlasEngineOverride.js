@@ -86,6 +86,13 @@
                         }
                     } catch (e3) {}
                 }
+                if (dataType === "selectionBounds") {
+                    // Engine reported the current selection's start/end rects -> pin the drag markers + Copy popover.
+                    try {
+                        var bs = findBrowser(this, "engineSelectionBounds");
+                        if (bs) { bs.engineSelectionBounds(data || ""); }
+                    } catch (e4) {}
+                }
                 if (enyo.log) { enyo.log("[Atlas] actionData " + dataType + " url=" + (this.url || "") + " len=" + (data ? data.length : 0)); }
             };
             if (enyo.log) { enyo.log("[Atlas] WebView engine -> application/x-atlas-browser"); }
