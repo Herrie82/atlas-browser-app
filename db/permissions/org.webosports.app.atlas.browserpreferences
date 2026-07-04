@@ -1,0 +1,12 @@
+[
+	{	"type"		: "db.kind"
+	,	"object"	: "com.palm.browserpreferences:1"
+	,	"caller"	: "org.webosports.app.atlas"
+	,	"operations":
+		{	"create": "allow"
+		,	"read"	: "allow"
+		,	"update": "allow"
+		,	"delete": "allow"
+		}
+	}
+]
