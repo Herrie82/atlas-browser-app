@@ -673,20 +673,28 @@ enyo.kind({
 		if (this._editPressPt) { this.viewCall("enableSelectionMode", [this._editPressPt.left, this._editPressPt.top]); }
 		return true;
 	},
-	// Paste into the focused field. Prefer the system clipboard (cross-app, if the read works); otherwise
-	// fall back to the engine's own Paste editing command (WPE clipboard — what our in-browser Copy fills).
+	// Paste into the focused field. Reads the SYSTEM clipboard via the platform's PalmSystem.paste()
+	// (enyo.dom.getClipboard) — this is the cross-app path: text copied in Notes/anywhere is readable,
+	// as is our own in-browser Copy (which writes the system clipboard via execCommand cut). The read is
+	// async (paste settles a tick later), so the insert happens in the callback. Falls back to the last
+	// in-browser copy, then the engine's own Paste command.
 	pasteSelectionClick: function() {
 		// Guard against a double-fire (a stray second onclick would paste the text twice).
 		var now = (new Date()).getTime();
 		if (this._lastPasteMs && (now - this._lastPasteMs) < 700) { return true; }   // ignore a stray double-fire
 		this._lastPasteMs = now;
-		// prefer the system clipboard (cross-app, if the read works), else the text we last copied in-browser,
-		// else the engine's own Paste command.
-		var clip = (typeof enyo.getClipboard === "function") ? enyo.getClipboard() : "";
-		var txt = clip || this._lastClipboard || "";
-		if (txt) { this.viewCall("insertStringAtCursor", [txt]); }
-		else { this.viewCall("paste", []); }
 		this.hideSelectionUI();
+		var self = this;
+		var doInsert = function(text) {
+			var txt = text || self._lastClipboard || "";
+			if (txt) { self.viewCall("insertStringAtCursor", [txt]); }
+			else { self.viewCall("paste", []); }
+		};
+		if (window.PalmSystem && enyo.dom && typeof enyo.dom.getClipboard === "function") {
+			enyo.dom.getClipboard(function(text) { doInsert(text); });
+		} else {
+			doInsert("");
+		}
 		return true;
 	},
 	// Cut = copy the selection, then delete it (insert empty over it).

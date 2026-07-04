@@ -48,9 +48,10 @@ modern web-platform support, on the original hardware (Adreno 220, Cortex-A8, ke
   the pipe / crashes the client. (BrowserServer + BrowserAdapter rebuilt in lockstep.)
 - **Editable-field context menu** — long-press an input for **Select \| Select All \| Paste**; with a
   word selected, **Cut \| Copy \| Paste**. Word / select-all work *inside* `INPUT`/`TEXTAREA` (via
-  `setSelectionRange`, reported as an editable selection so no drag markers are drawn), and paste inserts
-  through the engine's `InsertText` command — falling back to the last in-browser copy, since the WPE
-  clipboard read is unavailable. Double-fire-debounced so a paste inserts once.
+  `setSelectionRange`, reported as an editable selection so no drag markers are drawn). **Paste reads the
+  system clipboard cross-app** — via the platform's async `PalmSystem.paste()` (`enyo.dom.getClipboard`),
+  so text copied in *any* app (Notes, etc.) pastes in — and inserts through the engine's `InsertText`
+  command, falling back to the last in-browser copy. Double-fire-debounced so a paste inserts once.
 - **Password Manager** — a single app-menu entry / toaster tab: searchable list, swipe-to-delete,
   tap-to-edit dialog with **show/hide password**, secure-lock iconography, and **import + export CSV**
   icons (Chrome / Google Password Manager format) right in the toaster.
@@ -97,17 +98,9 @@ start-page reorder** are committed and verified on-device. A **static + dynamic 
 - **Real-site load time is CPU-bound on first-party JS** on the TouchPad; the DFG JIT helps JS
   execution but page load stays near the hardware limit.
 - Page text-selection depends on the engine hit-test; the long-press must land on actual text.
-- **Selection "stale yellow"** — after a dismiss tap the highlight can linger until the next scroll.
-  Forcing an immediate repaint costs a ~500 ms full-buffer readback in the pan model, so it's deferred
-  rather than made janky.
 
 ## To-do / roadmap
 
-- **Cross-app clipboard read** — paste currently prefers the system clipboard but the WPE-engine
-  `execCommand('paste')` read is blocked, so paste falls back to the last *in-browser* copy. A real
-  cross-app read (a webOS clipboard-service bridge) would let Atlas paste text copied in other apps.
-- **Selection stale-yellow** repaint — cheaper path than a full readback (deliver the WebProcess's
-  spontaneous repaint frame instead of forcing one).
 - **WPE memory tuning** (researched, not yet applied):
   - *Phase 2* — `MemoryPressureSettings` (WebProcess ~200 MB cap) + a cache-model choice in the backend.
   - *Phase 3* (build-time) — `-DENABLE_GPU_PROCESS=OFF`, drop `avif/jpegxl/webaudio/mediastream/video`,
