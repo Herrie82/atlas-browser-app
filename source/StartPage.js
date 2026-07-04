@@ -52,6 +52,7 @@ enyo.kind({
 		this.tileControls = [];
 		this.dragging = false;
 		this.suppressTap = false;
+		this.heldNoDrag = false;
 		this.searchPreferencesChanged();
 		this.defaultSearchChanged();
 		this.refreshBookmarks();
@@ -86,11 +87,25 @@ enyo.kind({
 		this.$.bookmarksService.call({query: {orderBy: "idx", limit: 100}});
 	},
 	gotBookmarks: function(inSender, inResponse) {
-		this.bookmarks = (inResponse && inResponse.results) || [];
+		var res = (inResponse && inResponse.results) || [];
+		// Never rebuild the grid mid-drag (destroying controls wedges enyo's gesture dispatch), and skip the
+		// redundant rebuild when the db watch just echoes our own reorder (same set + order) — that echo can
+		// otherwise land during the NEXT drag's setup and stop it. Only rebuild on a real add/remove/reorder.
+		if (this.dragging) { this.bookmarks = res; return; }
+		if (this.sameBookmarkOrder(res)) { this.bookmarks = res; return; }
+		this.bookmarks = res;
 		this.buildTiles();
 	},
+	sameBookmarkOrder: function(res) {
+		var cur = this.bookmarks || [];
+		if (cur.length !== res.length) { return false; }
+		for (var i = 0; i < res.length; i++) {
+			if (!cur[i] || cur[i]._id !== res[i]._id) { return false; }
+		}
+		return true;
+	},
 	buildTiles: function() {
-		if (!this.hasNode()) {
+		if (!this.hasNode() || this.dragging) {
 			return;
 		}
 		this.$.grid.destroyControls();
@@ -148,7 +163,21 @@ enyo.kind({
 		// onclick is declared on the tile, so inSender is the tile (clicks on the
 		// image/label child bubble up to it). bmIndex maps back to the record.
 		// A tap navigates; a preceding hold (menu) or drag (reorder) must NOT navigate.
-		if (this.suppressTap || this.dragging) {
+		if (this.dragging) {
+			this.suppressTap = false;
+			return true;
+		}
+		// A long-press that never turned into a drag -> open the context menu now, on release
+		// (hold arms the drag; releasing in place instead shows Open / New Card / Remove).
+		if (this.heldNoDrag) {
+			this.heldNoDrag = false;
+			this.suppressTap = false;
+			if (this.menuBookmark) {
+				this.$.tileMenu.openAtControl(this.heldTile || inSender, {top: 10});
+			}
+			return true;
+		}
+		if (this.suppressTap) {
 			this.suppressTap = false;
 			return true;
 		}
@@ -165,18 +194,19 @@ enyo.kind({
 		if (this.dragging) {
 			return true;
 		}
+		// A long-press ARMS a drag-to-reorder — it does NOT pop the menu here. Moving the finger reorders
+		// the tile (tileDragStart); releasing in place instead opens the menu (tileClick, via heldNoDrag).
 		// Swallow the click that the ensuing "up" may generate after a hold.
 		this.suppressTap = true;
+		this.heldNoDrag = true;
+		this.heldTile = inSender;
 		this.menuBookmark = this.bookmarks && this.bookmarks[inSender.bmIndex];
-		if (!this.menuBookmark) {
-			return true;
-		}
-		this.$.tileMenu.openAtControl(inSender, {top: 10});
 		return true;
 	},
 	tileMenuClosed: function() {
-		// Guarantee the flag can't get wedged if no stray click ever arrives.
+		// Guarantee the flags can't get wedged if no stray click ever arrives.
 		this.suppressTap = false;
+		this.heldNoDrag = false;
 	},
 	menuOpen: function() {
 		var b = this.menuBookmark;
@@ -218,11 +248,11 @@ enyo.kind({
 		return 0;
 	},
 	tileDragStart: function(inSender, inEvent) {
-		// If the menu is up, a drag just dismisses it (don't reorder).
+		// If the menu is somehow up, close it and proceed to reorder.
 		if (this.$.tileMenu.showing) {
 			this.$.tileMenu.close();
-			return true;
 		}
+		this.heldNoDrag = false;   // the hold became a real drag, not a menu-on-release
 		if (this.bookmarks.length < 2) {
 			return true; // nothing to reorder
 		}
@@ -233,6 +263,13 @@ enyo.kind({
 		this.dragTile = inSender;
 		this.dragStartX = this.eventClientX(inEvent);
 		this.dragStartY = this.eventClientY(inEvent);
+		// Record each tile's natural slot rect (before any drag transform) so the OTHER tiles can reflow to
+		// open a gap at the drop position — webOS-launcher style, no drop-highlight box.
+		this.slotRects = [];
+		for (var si = 0, sn; si < this.tileControls.length; si++) {
+			sn = this.tileControls[si].hasNode();
+			this.slotRects.push(sn ? sn.getBoundingClientRect() : null);
+		}
 		var n = inSender.hasNode();
 		if (n) {
 			n.className += " startpage-tile-dragging";
@@ -254,37 +291,43 @@ enyo.kind({
 		return true;
 	},
 	updateDropTarget: function(x, y) {
-		var target = this.dragTargetIndex;
-		for (var i = 0, c, node; (c = this.tileControls[i]); i++) {
-			// Skip the lifted tile: it's translated under the finger so its rect
-			// would otherwise always match first.
-			if (i === this.dragFromIndex) { continue; }
-			node = c.hasNode();
-			if (!node) { continue; }
-			var r = node.getBoundingClientRect();
-			if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
-				target = i;
-				break;
-			}
+		// Target = the slot whose CENTER is nearest the finger, tested against each tile's NATURAL slot
+		// (captured at drag start), NOT its live getBoundingClientRect. Two reasons: (1) the reflow moves the
+		// tiles, so live rects would make the target oscillate; (2) nearest-center (vs. strict containment)
+		// snaps to the first slot when the finger goes past the far left and the last slot past the far right,
+		// so the item CAN be dropped before the leftmost / after the rightmost tile. slotRects and the finger
+		// coords are in the same viewport frame. The dragged tile's own slot is included → staying home = no move.
+		var target = this.dragFromIndex, bestD = Infinity;
+		for (var i = 0, r, cx, cy, d; i < this.slotRects.length; i++) {
+			r = this.slotRects[i];
+			if (!r) { continue; }
+			cx = (r.left + r.right) / 2; cy = (r.top + r.bottom) / 2;
+			d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+			if (d < bestD) { bestD = d; target = i; }
 		}
 		if (target !== this.dragTargetIndex) {
-			this.setDropHighlight(this.dragTargetIndex, false);
 			this.dragTargetIndex = target;
-			if (target !== this.dragFromIndex) {
-				this.setDropHighlight(target, true);
-			}
+			this.reflowTiles(target);
 		}
 	},
-	setDropHighlight: function(inIndex, inOn) {
-		var c = this.tileControls[inIndex];
-		var node = c && c.hasNode();
-		if (!node) { return; }
-		if (inOn) {
-			if (node.className.indexOf("startpage-tile-drop-target") < 0) {
-				node.className += " startpage-tile-drop-target";
+	// webOS-launcher style: instead of a drop-highlight box, slide the OTHER tiles over so a gap opens at the
+	// drop position. Each non-dragged tile animates from its natural slot to the slot it would occupy once the
+	// dragged tile is removed from `from` and reinserted at `target`.
+	reflowTiles: function(target) {
+		var F = this.dragFromIndex;
+		for (var i = 0, node, src, dst, j; i < this.tileControls.length; i++) {
+			if (i === F) { continue; }   // the lifted tile follows the finger, not the reflow
+			node = this.tileControls[i].hasNode();
+			src = this.slotRects[i];
+			if (!node || !src) { continue; }
+			j = i;                                  // where tile i ends up once F -> target
+			if (F < target) { if (i > F && i <= target) { j = i - 1; } }
+			else if (F > target) { if (i >= target && i < F) { j = i + 1; } }
+			dst = this.slotRects[j];
+			if (dst) {
+				node.style.webkitTransform = (j === i) ? "" :
+					("translate(" + (dst.left - src.left) + "px," + (dst.top - src.top) + "px)");
 			}
-		} else {
-			node.className = node.className.replace(/\s*startpage-tile-drop-target/g, "");
 		}
 	},
 	tileDragFinish: function(inSender, inEvent) {
@@ -294,16 +337,22 @@ enyo.kind({
 		this.dragging = false;
 		var from = this.dragFromIndex;
 		var to = this.dragTargetIndex;
-		// Clear transient visual state.
-		this.setDropHighlight(to, false);
+		// Clear the reflow transforms on all tiles (a reorder rebuilds them, but a no-op drop won't).
+		for (var i = 0, cn; i < this.tileControls.length; i++) {
+			cn = this.tileControls[i].hasNode();
+			if (cn) { cn.style.webkitTransform = ""; }
+		}
 		var n = this.dragTile && this.dragTile.hasNode();
 		if (n) {
-			n.style.webkitTransform = "";
 			n.className = n.className.replace(/\s*startpage-tile-dragging/g, "");
 		}
 		this.dragTile = null;
+		// Defer the reorder+rebuild OUT of this drag-finish dispatch: buildTiles() calls
+		// grid.destroyControls(), and destroying the control tree while enyo is still dispatching the
+		// gesture wedges the dispatcher so the NEXT drag won't register. A 0ms async breaks that.
 		if (to !== from && to >= 0 && to < this.bookmarks.length) {
-			this.commitReorder(from, to);
+			var self = this;
+			window.setTimeout(function() { self.commitReorder(from, to); }, 0);
 		}
 		return true;
 	},

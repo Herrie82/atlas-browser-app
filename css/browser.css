@@ -86,10 +86,12 @@
 	text-align: center;
 	border-radius: 10px;
 	cursor: pointer;
-	/* Only animate the background; the reorder drag drives -webkit-transform
-	   directly via inline styles and must track the finger without easing. */
-	-webkit-transition: background-color 120ms ease;
-	transition: background-color 120ms ease;
+	/* Kill webOS's blue touch-flash on hold. */
+	-webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+	/* Ease the reorder reflow: the OTHER tiles slide over to open a gap (launcher-style). The lifted tile
+	   drives -webkit-transform inline to track the finger and must NOT ease — see .startpage-tile-dragging. */
+	-webkit-transition: -webkit-transform 140ms ease;
+	transition: transform 140ms ease;
 }
 
 .startpage-tile.enyo-pressed,
@@ -99,7 +101,8 @@
 	transform: scale(0.96);
 }
 
-/* Tile lifted and following the finger during a reorder drag. */
+/* Tile lifted and following the finger during a reorder drag. Its inline -webkit-transform tracks the finger,
+   so easing must be OFF here (only the reflowing siblings ease). */
 .startpage-tile.startpage-tile-dragging {
 	position: relative;
 	z-index: 1000;
@@ -108,13 +111,8 @@
 	background-color: rgba(255, 255, 255, 0.18);
 	-webkit-box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
 	box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
-}
-
-/* Slot the dragged tile will drop into. */
-.startpage-tile.startpage-tile-drop-target {
-	background-color: rgba(90, 160, 255, 0.22);
-	-webkit-box-shadow: inset 0 0 0 2px rgba(120, 180, 255, 0.9);
-	box-shadow: inset 0 0 0 2px rgba(120, 180, 255, 0.9);
+	-webkit-transition: none;
+	transition: none;
 }
 
 .startpage-tile-thumb {
@@ -728,28 +726,25 @@ img.atlas-kb-button {
 	background-color: #454547;   /* solid fallback if the old -webkit-gradient parse fails */
 	background-image: -webkit-gradient(linear, left top, left bottom, from(#565658), to(#39393b));
 }
-/* segmented buttons inside the pill: Copy | Select All */
+/* segmented buttons inside the pill (Copy|Select All, or Cut|Copy|Paste, or Select|Select All|Paste).
+ * Buttons are shown/hidden per context; the etched divider is a left border on every button except the
+ * first-visible one (tagged .atlas-select-first); the first/last-visible get the pill's rounded ends. */
 .atlas-select-btn {
 	display: inline-block;
 	padding: 8px 18px;
 	vertical-align: middle;
+	border-left: 1px solid rgba(0,0,0,0.45);
+	-webkit-box-shadow: inset 1px 0 0 rgba(255,255,255,0.07);
 }
 .atlas-select-btn:active {
 	background-color: rgba(255,255,255,0.16);
 }
-.atlas-select-btn.enyo-first, .atlas-select-popover .atlas-select-btn:first-child {
+.atlas-select-btn.atlas-select-first {
+	border-left: 0; -webkit-box-shadow: none;
 	-webkit-border-top-left-radius: 14px; -webkit-border-bottom-left-radius: 14px;
 }
-.atlas-select-popover .atlas-select-btn:last-child {
+.atlas-select-btn.atlas-select-last {
 	-webkit-border-top-right-radius: 14px; -webkit-border-bottom-right-radius: 14px;
-}
-/* vertical divider between the two buttons (etched: dark line + faint highlight) */
-.atlas-select-sep {
-	display: inline-block;
-	width: 0; height: 22px;
-	vertical-align: middle;
-	border-left: 1px solid rgba(0,0,0,0.45);
-	-webkit-box-shadow: 1px 0 0 rgba(255,255,255,0.08);
 }
 /* downward tail (matches the pill's bottom colour) */
 .atlas-select-popover:after {

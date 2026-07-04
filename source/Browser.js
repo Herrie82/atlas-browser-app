@@ -141,10 +141,15 @@ enyo.kind({
 			style: "position:fixed; z-index:1000; width:30px; height:30px;", components: [
 			{kind: "Image", src: "images/webkit/bottommarker.png", style: "position:absolute; left:6px; top:0px; width:18px; height:15px;"}
 		]},
+		// One popover, buttons shown per context: non-editable selection = Copy|Select All; editable field
+		// with no selection = Select|Select All|Paste; editable with a selection = Cut|Copy|Paste. Separators
+		// come from a CSS border on every button except the first-visible (tagged atlas-select-first).
 		{name: "selPopover", className: "atlas-select-popover", showing: false, style: "position:fixed; z-index:1001;", components: [
-			{name: "copyBtn", className: "atlas-select-btn", content: $L("Copy"), onclick: "copySelectionClick"},
-			{className: "atlas-select-sep"},
-			{name: "selectAllBtn", className: "atlas-select-btn", content: $L("Select All"), onclick: "selectAllSelectionClick"}
+			{name: "cutBtn", className: "atlas-select-btn", content: $L("Cut"), onclick: "cutSelectionClick", showing: false},
+			{name: "copyBtn", className: "atlas-select-btn", content: $L("Copy"), onclick: "copySelectionClick", showing: false},
+			{name: "selectBtn", className: "atlas-select-btn", content: $L("Select"), onclick: "editSelectClick", showing: false},
+			{name: "selectAllBtn", className: "atlas-select-btn", content: $L("Select All"), onclick: "selectAllSelectionClick", showing: false},
+			{name: "pasteBtn", className: "atlas-select-btn", content: $L("Paste"), onclick: "pasteSelectionClick", showing: false}
 		]}
     ],
 		loginsKind: "org.webosports.logins:1",
@@ -480,6 +485,7 @@ enyo.kind({
 		if (!inText) {
 			return;
 		}
+		this._lastClipboard = inText;   // remembered for in-browser Paste (the system-clipboard read is blocked)
 		enyo.dom.setClipboard(inText);
 		var params = enyo.json.stringify({dontLaunch: true});
 		enyo.windows.addBannerMessage($L("Copied to clipboard"), params);
@@ -550,12 +556,18 @@ enyo.kind({
 		// inTapInfo is the engine hit-test at the long-press point
 		// (isLink/linkUrl, isImage/imageUrl, editable). If the engine hit-test
 		// isn't wired yet it may be null/isNull; fall back to page-level actions.
+		// On the bookmark start page (atlas:home/start) long-press belongs to the grid's drag-to-reorder —
+		// don't hijack it with a text-selection/edit menu.
+		if (this.url && /^atlas:(\/\/)?(home|start)\b/i.test(this.url)) { return; }
 		var info = inTapInfo || {};
-		// A long-press inside an editable field belongs to the engine's own
-		// selection/paste handling, so don't hijack it with our menu.
+		// Long-press in an editable field: show the edit menu (Select | Select All | Paste) at the point.
 		if (info.editable) {
-			return;
+			this._selEditable = true;
+			this._editPressPt = {left: inEvent.pageX, top: inEvent.pageY};
+			this.showEditMenu(inEvent.pageX, inEvent.pageY);
+			return true;
 		}
+		this._selEditable = false;
 		// Plain text (no link/image): select the word directly — legacy-style, no "Select Text" menu step.
 		if (!info.isLink && !info.isImage) {
 			this._selAnchor = {left: inEvent.pageX, top: inEvent.pageY};
@@ -584,7 +596,13 @@ enyo.kind({
 	engineSelectionBounds: function(inData) {
 		var b;
 		try { b = enyo.json.parse(inData); } catch (e) { return; }
-		if (!b || !b.len) { this.hideSelectionUI(); return; }
+		if (!b || !b.len) {
+			// while the "Select | Select All | Paste" edit menu is up, an empty report (e.g. from focusing
+			// the field) must NOT dismiss it — it's dismissed by a button, a scroll, or a new long-press.
+			if (this._editMenuUp) { return; }
+			this.hideSelectionUI(); return;
+		}
+		this._editMenuUp = false;   // a real selection supersedes the edit-empty menu
 		this._selBounds = b;
 		this._selBaseScrollY = this._lastScrollY || 0;   // scroll pos at selection time (auto-hide on scroll)
 		// The engine now reports rects in VISIBLE-viewport space (it already folded the pan-model scroll math:
@@ -597,22 +615,86 @@ enyo.kind({
 		var ox = Math.round(vr.left), oy = Math.round(vr.top);
 		// 30x30 hit box; the arrow inside is offset so its tip sits at the selection end. selStart arrow tip
 		// = box (15,30) so box goes at (sx-15, sy-30); selEnd arrow tip = box (15,0) so box at (ex-15, ey).
-		this.$.selStart.applyStyle("left", (b.sx - 15 + ox) + "px");
-		this.$.selStart.applyStyle("top", (b.sy - 30 + oy) + "px");
-		this.$.selStart.setShowing(true);
-		this.$.selEnd.applyStyle("left", (b.ex - 15 + ox) + "px");
-		this.$.selEnd.applyStyle("top", (b.ey + oy) + "px");
-		this.$.selEnd.setShowing(true);
+		// Form inputs have no per-character rects, so no drag markers there — just the popover. Page/
+		// contenteditable selections get the draggable start/end arrows.
+		if (b.ed) {
+			this.$.selStart.setShowing(false);
+			this.$.selEnd.setShowing(false);
+		} else {
+			this.$.selStart.applyStyle("left", (b.sx - 15 + ox) + "px");
+			this.$.selStart.applyStyle("top", (b.sy - 30 + oy) + "px");
+			this.$.selStart.setShowing(true);
+			this.$.selEnd.applyStyle("left", (b.ex - 15 + ox) + "px");
+			this.$.selEnd.applyStyle("top", (b.ey + oy) + "px");
+			this.$.selEnd.setShowing(true);
+		}
 		// Copy bubble centered above the selection (clamp on-screen). Single-line selection uses the
 		// midpoint of start/end; multi-line falls back to above the start.
 		var midX = (b.ey - b.sy < b.sh + 4) ? Math.round((b.sx + b.ex) / 2) : b.sx;
 		// sit the bubble above the selection AND above the top marker (which occupies sy-15..sy) so they
 		// don't overlap; its tail then points down toward the marker/selection.
 		this.$.selPopover.applyStyle("top", Math.max(4, b.sy - 60 + oy) + "px");
+		// selection in an editable field -> Cut|Copy|Paste; otherwise Copy|Select All
+		this.setPopoverMode(this._selEditable ? "edit-sel" : "copy");
 		this.$.selPopover.setShowing(true);
-		// center by the popover's real width (it's now Copy | Select All, so wider than the old single button)
+		// center by the popover's real width (varies with which buttons are shown)
 		var pw = this.$.selPopover.hasNode() ? this.$.selPopover.node.offsetWidth : 150;
 		this.$.selPopover.applyStyle("left", Math.max(4, midX - Math.round(pw / 2) + ox) + "px");
+	},
+	// Show/hide the popover buttons for the given context and tag the first visible one (for the CSS
+	// separators). mode: "copy" (Copy|Select All), "edit-sel" (Cut|Copy|Paste), "edit-empty" (Select|Select All|Paste).
+	setPopoverMode: function(mode) {
+		var vis = {cutBtn: false, copyBtn: false, selectBtn: false, selectAllBtn: false, pasteBtn: false};
+		if (mode === "edit-sel") { vis.cutBtn = vis.copyBtn = vis.pasteBtn = true; }
+		else if (mode === "edit-empty") { vis.selectBtn = vis.selectAllBtn = vis.pasteBtn = true; }
+		else { vis.copyBtn = vis.selectAllBtn = true; }
+		var order = ["cutBtn", "copyBtn", "selectBtn", "selectAllBtn", "pasteBtn"], visList = [];
+		for (var i = 0; i < order.length; i++) {
+			var btn = this.$[order[i]];
+			btn.setShowing(vis[order[i]]);
+			btn.removeClass("atlas-select-first"); btn.removeClass("atlas-select-last");
+			if (vis[order[i]]) { visList.push(btn); }
+		}
+		if (visList.length) { visList[0].addClass("atlas-select-first"); visList[visList.length - 1].addClass("atlas-select-last"); }
+	},
+	// Editable long-press with no selection: Select | Select All | Paste, at the press point.
+	showEditMenu: function(x, y) {
+		this._editMenuUp = true;   // stays up through the focus {len:0}; dismissed by a button, a scroll, or a new long-press
+		this._reparentSelectionUI();
+		var vr = this.$.view.hasNode() ? this.$.view.node.getBoundingClientRect() : {top: 0, left: 0};
+		this.setPopoverMode("edit-empty");
+		this.$.selPopover.applyStyle("top", Math.max(4, y) + "px");
+		this.$.selPopover.setShowing(true);
+		var pw = this.$.selPopover.hasNode() ? this.$.selPopover.node.offsetWidth : 200;
+		this.$.selPopover.applyStyle("left", Math.max(4, Math.round(x - pw / 2)) + "px");
+	},
+	// "Select" in the edit menu -> select the current word at the press point.
+	editSelectClick: function() {
+		if (this._editPressPt) { this.viewCall("enableSelectionMode", [this._editPressPt.left, this._editPressPt.top]); }
+		return true;
+	},
+	// Paste into the focused field. Prefer the system clipboard (cross-app, if the read works); otherwise
+	// fall back to the engine's own Paste editing command (WPE clipboard — what our in-browser Copy fills).
+	pasteSelectionClick: function() {
+		// Guard against a double-fire (a stray second onclick would paste the text twice).
+		var now = (new Date()).getTime();
+		if (this._lastPasteMs && (now - this._lastPasteMs) < 700) { return true; }   // ignore a stray double-fire
+		this._lastPasteMs = now;
+		// prefer the system clipboard (cross-app, if the read works), else the text we last copied in-browser,
+		// else the engine's own Paste command.
+		var clip = (typeof enyo.getClipboard === "function") ? enyo.getClipboard() : "";
+		var txt = clip || this._lastClipboard || "";
+		if (txt) { this.viewCall("insertStringAtCursor", [txt]); }
+		else { this.viewCall("paste", []); }
+		this.hideSelectionUI();
+		return true;
+	},
+	// Cut = copy the selection, then delete it (insert empty over it).
+	cutSelectionClick: function() {
+		this.viewCall("copy", []);
+		this.viewCall("insertStringAtCursor", [""]);
+		this.hideSelectionUI();
+		return true;
 	},
 	_reparentSelectionUI: function() {
 		if (this._selReparented) { return; }
@@ -625,6 +707,7 @@ enyo.kind({
 	},
 	hideSelectionUI: function() {
 		this._selBounds = null;
+		this._editMenuUp = false;
 		if (this.$.selStart) { this.$.selStart.setShowing(false); }
 		if (this.$.selEnd) { this.$.selEnd.setShowing(false); }
 		if (this.$.selPopover) { this.$.selPopover.setShowing(false); }

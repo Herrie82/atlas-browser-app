@@ -35,44 +35,76 @@ modern web-platform support, on the original hardware (Adreno 220, Cortex-A8, ke
   ~1.25× on Math-heavy code (`Math.floor`/`%` are C-calls even under the JIT). Getting DFG correct on
   this softfp target required fixing a soft-float FP-call ABI hole in JSC's `CCallHelpers` (modern
   WebKit assumes hardfp) by **porting WebKit 2.34's softfp argument/return marshalling forward**.
-- **Password manager** — searchable list, swipe-to-delete, tap-to-edit dialog with **show/hide
-  password**, secure-lock iconography.
+  Runs **single-process** (`WEBKIT_USE_SINGLE_WEB_PROCESS`) with **Phase-1 low-RAM env tuning**
+  (`JSC_forceRAMSize`, RGB565 tiles, Nicosia paint-thread cap, `MALLOC_ARENA_MAX`).
+- **Legacy-webOS text selection** — long-press selects a word with a **persistent yellow highlight**
+  (the view is forced active so WebKit paints the active colour, not inactive grey). Lands on the
+  right word at **any scroll position** (pan-model coordinate fix). **Draggable start/end markers**
+  (30×30 grab zones) grow/shrink the selection, a segmented **Copy \| Select All** popover sits above
+  it, and a **tap outside dismisses** it. Copy is **plain text**. This runs the full app →
+  BrowserAdapter → BrowserServer → WPE-engine chain via a new `extendSelectionTo` IPC command.
+- **Large clipboard payloads** — the yap IPC buffers are now **dynamically growable up to 512 KB**
+  (24-bit length header) instead of a fixed 16 KB, so a full **Select All → Copy** no longer overflows
+  the pipe / crashes the client. (BrowserServer + BrowserAdapter rebuilt in lockstep.)
+- **Password Manager** — a single app-menu entry / toaster tab: searchable list, swipe-to-delete,
+  tap-to-edit dialog with **show/hide password**, secure-lock iconography, and **import + export CSV**
+  icons (Chrome / Google Password Manager format) right in the toaster.
 - **Search on Bookmarks / History / Passwords** — via db8's `searchText` full-text index (matches
-  title **or** URL).
+  title **or** URL), with a tightened search-pill and full-width row separators.
 - **Save-login prompt** — offers to store username/password on form submit.
 - **Form autofill manager** — store/search/edit/delete personal-info values (name, email, phone,
   address, …) in `org.webosports.autofill:1`, from the app menu / toaster tab. (Auto-capture on submit
   and auto-fill on field focus are the engine-side next step.)
-- **Translate page** — opens the current page through Google Translate in your device language.
-- **Address-bar autocomplete** — history/bookmark suggestions as you type.
+- **Translate page** — an **address-bar toggle** (Preferences) opens the current page through Google
+  Translate in your device language.
+- **Address-bar** — history/bookmark autocomplete as you type; normalized icon baseline; a
+  show/hide-keyboard button.
 - **SSL / HTTP-auth dialogs** — certificate and basic-auth prompts.
 - **Private browsing** card (ephemeral session, in-memory cookies/cache/history).
-- **CSV password import** (Chrome / Google Password Manager export).
 - **Start page** — bookmark grid with drag-to-reorder tiles.
 - **Content blocker** — WebKit content-rules blocking ads **and** trackers (StevenBlack hosts +
   curated regional list).
 - **Reading mode** — reader view of the loaded article.
-- **Text selection + copy** on web content; system cut/copy/paste in the URL bar.
 - **TLS 1.3** — process-private OpenSSL 1.1 for the BrowserServer (system `libssl` untouched).
+
+## Status
+
+The stack is now **atlas-only**: the earlier Isis engine has been fully **decommissioned** — all
+`isis*` upstart jobs, plugins, binaries and ~153 MB of dormant on-device build directories were
+removed. Canonical build/deploy paths are pinned in `~/webos/wpe/DEPLOY-PATHS.md` (there is exactly
+one `BrowserServer-atlas` binary and one `BrowserAdapterAtlas.so` plugin — deploying anywhere else
+silently no-ops). Text selection (yellow highlight, drag markers, Copy/Select All, tap-dismiss, 512 KB
+copy) is committed and working across all four repos.
 
 ## Known issues / limitations
 
 - **LunaCE double-fires taps** (touch + mouse → `onclick` 2–4× per tap); dialog actions are debounced.
-- **Real-site load time is network-bound** on the TouchPad's WiFi radio — JIT gains show on JS
-  execution, not wall-clock page load.
+- **Real-site load time is CPU-bound on first-party JS** on the TouchPad; the DFG JIT helps JS
+  execution but page load stays near the hardware limit.
 - Page text-selection depends on the engine hit-test; the long-press must land on actual text.
+- **Selection "stale yellow"** — after a dismiss tap the highlight can linger until the next scroll.
+  Forcing an immediate repaint costs a ~500 ms full-buffer readback in the pan model, so it's deferred
+  rather than made janky.
 
 ## To-do / roadmap
 
-- Make the DFG JIT the **persistent default** (update `safeengine.sh`, which still reverts to C_LOOP).
+- **Paste-on-input** — editable-field context menu: **Select \| Select All \| Paste** on an empty
+  field, **Cut \| Copy \| Paste** on a selection (reuses the existing `insertStringAtCursor` engine
+  command). *In progress.* Needs cross-app clipboard **read** (via `execCommand('paste')`) validated.
+- **Selection stale-yellow** repaint — cheaper path than a full readback (deliver the WebProcess's
+  spontaneous repaint frame instead of forcing one).
+- **WPE memory tuning** (researched, not yet applied):
+  - *Phase 2* — `MemoryPressureSettings` (WebProcess ~200 MB cap) + a cache-model choice in the backend.
+  - *Phase 3* (build-time) — `-DENABLE_GPU_PROCESS=OFF`, drop `avif/jpegxl/webaudio/mediastream/video`,
+    `ENABLE_SAMPLING_PROFILER=OFF`.
+  - A rigorous **ON/OFF A/B** of the Phase-1 env tuning still owes a **soft-reset harness**
+    (`tellbootie` reboots wedge novacom, so a `drop_caches` + LunaSysMgr/atlas restart is needed instead).
 - Commit the `CCallHelpers.h` softfp patch as a standalone `.patch` (it lives in the build tree).
-- **Network:** expand the tracker/beacon blocklist, verify HTTP disk cache is enabled, optional
-  data-saver (defer images).
+- **Network:** expand the tracker/beacon blocklist, optional data-saver (defer images).
 - **Scrolling perf:** async axis-event scroll done; strip-readback optimization pending.
 - Autofill engine hooks: auto-capture form values on submit + auto-fill matching fields on focus
   (the manager/storage is done; matching is the remaining piece).
 - Tabs; gesture navigation.
-- GitHub repo rename `isis → atlas` + push.
 
 ## Build & deploy (developer notes)
 
@@ -81,8 +113,13 @@ modern web-platform support, on the original hardware (Adreno 220, Cortex-A8, ke
 - **Deploy:** `deploy-252.sh` — `patchelf` interp/rpath on the process stubs + binary string-patch of
   the baked host prefix (`staging-glibc-252` → `/media/internal/wpe-252`, `/.`-padded). Never ship raw
   `_b/lib` artifacts.
-- **BrowserServer:** `build-browserserver.sh` (compile) + `link-bs-252.sh` (link) →
-  `/media/internal/wpe-252/BrowserServer-atlas`.
+- **BrowserServer:** `build-browserserver.sh all` (compile — use `all`, not single-file, after any
+  `BrowserPageWPE.h` member change) + `link-bs-252.sh` (link) → `/media/internal/wpe-252/BrowserServer-atlas`.
+- **BrowserAdapter (NPAPI plugin):** `deploy-adapter.sh` builds + strips + deploys to
+  `/usr/lib/BrowserPlugins/BrowserAdapterAtlas.so` (rootfs, remount rw) — the **only** path the app
+  loads it from (MIME `application/x-atlas-browser`).
+- **yap IPC:** `YapDefs.h` must match in `BrowserServer/Yap/` and the staging include; BrowserServer +
+  BrowserAdapter must be rebuilt **in lockstep** or all IPC corrupts. Full path map: `~/webos/wpe/DEPLOY-PATHS.md`.
 - **App JS reload:** `killall LunaSysMgr` (respawns in ~20–30 s, clears the JS cache). **Never**
   `rm -rf /var/luna/data/extractfs/*` — it forces a full re-extraction of every app and can wedge the
   device.
