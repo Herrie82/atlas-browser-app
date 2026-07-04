@@ -19,7 +19,8 @@ enyo.kind({
 	published: {
 		url: "",
 		searchPreferences: {},
-		defaultSearch: ""
+		defaultSearch: "",
+		offerTranslate: false
 	},
 	events: {
 		onPageTitleChanged: "",
@@ -38,7 +39,9 @@ enyo.kind({
 		// called when user wants to leave the browser
 		onClose: "",
 		// user typed atlas:home in the address bar -> app switches to the start-page (bookmark grid) view
-		onGoHome: ""
+		onGoHome: "",
+		// user tapped the address-bar translate icon -> app opens the page via Google Translate
+		onTranslatePage: ""
 	},
 	components: [
 		{kind: "Control", style: "position:absolute; bottom:0px; left:0px; height:8px; width:1024px; background-color:none; z-index:120;"},
@@ -57,7 +60,8 @@ enyo.kind({
 			onShareLink: "doShareLink",
 			onOpenBookmarks: "doOpenBookmarks",
 			onNewCard: "openNewCard",
-			onHistorySelected: "setHistoryUrl"
+			onHistorySelected: "setHistoryUrl",
+			onTranslate: "actionbarTranslate"
 		},
 		{name: "findDialog", kind: "FindBar", showing: false, onFind: "find", onGoToPrevious: "goToPrevious", onGoToNext: "goToNext"},
 		{name: "view", kind: "WebView", flex: 1, height: "100%",
@@ -71,6 +75,7 @@ enyo.kind({
 			onFileLoad: "doFileLoad",
 			onError: "browserError",
 			onSingleTap: "browserTap",
+			onScrolledTo: "browserScrolled",
 			onAlertDialog: "showAlertDialog",
 			onConfirmDialog: "showConfirmDialog",
 			onPromptDialog: "showPromptDialog",
@@ -128,7 +133,7 @@ enyo.kind({
 			style: "position:fixed; z-index:1000; width:18px; height:15px;"},
 		{name: "selEnd", kind: "Image", src: "images/webkit/bottommarker.png", showing: false,
 			style: "position:fixed; z-index:1000; width:18px; height:15px;"},
-		{name: "selPopover", kind: "CustomButton", className: "atlas-select-popover", showing: false,
+		{name: "selPopover", className: "atlas-select-popover", showing: false,
 			style: "position:fixed; z-index:1001;", content: $L("Copy"), onclick: "copySelectionClick"}
     ],
 		loginsKind: "org.webosports.logins:1",
@@ -330,6 +335,23 @@ enyo.kind({
 			this.viewCall("clearSelection", []);
 			this.hideSelectionUI();
 		}
+	},
+	// The markers/popover are position:fixed on screen, so once the page scrolls they'd go stale ->
+	// auto-hide + clear the selection when a real scroll happens (a new long-press re-selects).
+	browserScrolled: function(inSender, inX, inY) {
+		this._lastScrollY = inY;
+		if (this._selBounds && Math.abs(inY - (this._selBaseScrollY || 0)) > 6) {
+			this.viewCall("clearSelection", []);
+			this.hideSelectionUI();
+		}
+	},
+	// Show/hide the address-bar Google Translate icon based on the "Offer to translate pages" preference.
+	offerTranslateChanged: function() {
+		if (this.$.actionbar) { this.$.actionbar.setShowTranslate(this.offerTranslate); }
+	},
+	// Address-bar translate icon tapped -> ask the app to open the current page via Google Translate.
+	actionbarTranslate: function() {
+		this.doTranslatePage(this.url || (this.$.view.getUrl ? this.$.view.getUrl() : ""));
 	},
 	showPopup: function(inPopup) {
 		var w = enyo.fetchControlSize(this).w;
@@ -544,25 +566,41 @@ enyo.kind({
 		try { b = enyo.json.parse(inData); } catch (e) { return; }
 		if (!b || !b.len) { this.hideSelectionUI(); return; }
 		this._selBounds = b;
-		try {
-			var vr = this.$.view.hasNode() ? this.$.view.node.getBoundingClientRect() : null;
-			enyo.warn("[Atlas] selBounds=" + inData + " anchor=" + enyo.json.stringify(this._selAnchor || null) +
-				" viewTop=" + (vr ? Math.round(vr.top) : "?") + " viewLeft=" + (vr ? Math.round(vr.left) : "?"));
-		} catch (eL) {}
+		this._selBaseScrollY = this._lastScrollY || 0;   // scroll pos at selection time (auto-hide on scroll)
+		// The reported coords are true window/screen coords, but enyo Panes carry a -webkit-transform
+		// which makes position:fixed relative to the pane, not the viewport -> markers land off. Move the
+		// overlay nodes to document.body (no transformed ancestor) so fixed positioning is real-screen.
+		this._reparentSelectionUI();
+		// The engine reports coords relative to the web CONTENT (0 = top of the page area). The markers
+		// are position:fixed on document.body (real screen), so add the WebView's live screen offset
+		// (top ~= address-bar height, left ~= 0) to land on the actual text.
+		var vr = this.$.view.hasNode() ? this.$.view.node.getBoundingClientRect() : {top: 0, left: 0};
+		var ox = Math.round(vr.left), oy = Math.round(vr.top);
 		// top marker (18x15): its bottom points at the selection start
-		this.$.selStart.applyStyle("left", (b.sx - 9) + "px");
-		this.$.selStart.applyStyle("top", (b.sy - 15) + "px");
+		this.$.selStart.applyStyle("left", (b.sx - 9 + ox) + "px");
+		this.$.selStart.applyStyle("top", (b.sy - 15 + oy) + "px");
 		this.$.selStart.setShowing(true);
 		// bottom marker: its top points at the selection end
-		this.$.selEnd.applyStyle("left", (b.ex - 9) + "px");
-		this.$.selEnd.applyStyle("top", b.ey + "px");
+		this.$.selEnd.applyStyle("left", (b.ex - 9 + ox) + "px");
+		this.$.selEnd.applyStyle("top", (b.ey + oy) + "px");
 		this.$.selEnd.setShowing(true);
 		// Copy bubble centered above the selection (clamp on-screen). Single-line selection uses the
 		// midpoint of start/end; multi-line falls back to above the start.
 		var midX = (b.ey - b.sy < b.sh + 4) ? Math.round((b.sx + b.ex) / 2) : b.sx;
-		this.$.selPopover.applyStyle("left", Math.max(4, midX - 34) + "px");
-		this.$.selPopover.applyStyle("top", Math.max(4, b.sy - 46) + "px");
+		// sit the bubble above the selection AND above the top marker (which occupies sy-15..sy) so they
+		// don't overlap; its tail then points down toward the marker/selection.
+		this.$.selPopover.applyStyle("left", Math.max(4, midX - 40 + ox) + "px");
+		this.$.selPopover.applyStyle("top", Math.max(4, b.sy - 60 + oy) + "px");
 		this.$.selPopover.setShowing(true);
+	},
+	_reparentSelectionUI: function() {
+		if (this._selReparented) { return; }
+		var ctrls = [this.$.selStart, this.$.selEnd, this.$.selPopover];
+		for (var i = 0; i < ctrls.length; i++) {
+			var n = ctrls[i] && ctrls[i].hasNode();
+			if (n && n.parentNode !== document.body) { document.body.appendChild(n); }
+		}
+		this._selReparented = true;
 	},
 	hideSelectionUI: function() {
 		this._selBounds = null;

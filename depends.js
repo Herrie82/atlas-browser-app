@@ -30,6 +30,7 @@ enyo.depends(
 	"source/AutofillList.js",
 	"source/AutofillEditDialog.js",
 	"source/LoginImporter.js",
+	"source/LoginExporter.js",
 	"source/Browser.js",
 	"source/BookmarkList.js",
 	"source/CertificateDetail.js",

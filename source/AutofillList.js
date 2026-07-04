@@ -15,19 +15,16 @@ enyo.kind({
 	components: [
 		{name: "autofillService", kind: "DbService", dbKind: "org.webosports.autofill:1", reCallWatches: true,
 			method: "find", onSuccess: "gotData", subscribe: true, onWatch: "refreshList"},
-		{kind: "Header", className: "enyo-header-dark", layoutKind: "HFlexLayout", align: "center", components: [
-			{kind: "Image", src: "images/header-icon-prefs.png", style: "margin: 0 8px;"},
-			{content: $L("Autofill"), className: "header-title"}
-		]},
 		{className: "box-center atlas-pw-search", components: [
 			{name: "searchField", kind: "RoundedSearchInput", hint: $L("Search"),
 				autoCapitalize: "lowercase", autocorrect: false, spellcheck: false, autoWordComplete: false,
 				onchange: "processOnSearch", onCancel: "processOnCancel", keypressInputDelay: 300}
 		]},
+		{className: "atlas-list-separator"},
 		{name: "list", kind: "DbList", flex: 1, onQuery: "listQuery", onSetupRow: "listSetupRow", components: [
 			{name: "item", kind: "SwipeableItem", className: "atlas-pw-row", layoutKind: "HFlexLayout", tapHighlight: true,
 				onclick: "itemClick", onConfirm: "deleteItem", components: [
-				{name: "icon", kind: "Image", src: "images/header-icon-prefs.png"},
+				{name: "icon", kind: "Image", src: "images/autofill-row-icon.png"},
 				{flex: 1, components: [
 					{name: "label", className: "url-item-title enyo-text-ellipsis"},
 					{name: "value", className: "url-item-url enyo-item-ternary enyo-text-ellipsis"}
@@ -46,17 +43,7 @@ enyo.kind({
 		this.inherited(arguments);
 		this.filterString = undefined;
 	},
-	//* Focus the search when shown as a drawer over the start page (see PasswordList).
-	showingChanged: function() {
-		this.inherited(arguments);
-		if (this.showing) {
-			if (document.activeElement && document.activeElement.blur) { document.activeElement.blur(); }
-			enyo.asyncMethod(this, "focusSearch");
-		}
-	},
-	focusSearch: function() {
-		if (this.$.searchField && this.$.searchField.forceFocus) { this.$.searchField.forceFocus(); }
-	},
+	//* Do NOT auto-focus the search on open (avoids popping the VKB, which eats half the screen).
 	listQuery: function(inSender, inQuery) {
 		return this.$.autofillService.call({query: {limit: 500}});
 	},

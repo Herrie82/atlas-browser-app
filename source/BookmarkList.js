@@ -27,10 +27,11 @@ enyo.kind({
 	components: [
 		{name: "bookmarksService", kind: "DbService", dbKind: "com.palm.browserbookmarks:1", reCallWatches: true, method: "find", onSuccess: "gotBookmarksData", subscribe: true, onWatch:"refreshList"},
 		{className: "box-center atlas-pw-search", components: [
-			{name: "searchField", kind: "RoundedSearchInput", hint: $L("Search bookmarks"),
+			{name: "searchField", kind: "RoundedSearchInput", hint: $L("Search"),
 				autoCapitalize: "lowercase", autocorrect: false, spellcheck: false, autoWordComplete: false,
 				onchange: "processOnSearch", onCancel: "processOnCancel", keypressInputDelay: 300}
 		]},
+		{className: "atlas-list-separator"},
 		{name: "list", kind: "DbList", flex: 1, desc: true, onQuery:"bookmarksQuery", onSetupRow: "listSetupRow", components: [
 			{name: "item", kind: "SwipeableItem", className: "toaster-item", layoutKind: "HFlexLayout", align: "center", tapHighlight: true, onclick: "itemClick", onConfirm: "deleteItem", components: [
 				{className: "item-thumb-container", components: [

@@ -46,8 +46,8 @@ enyo.kind({
 					{kind: "LabeledContainer", caption: $L("Enable JavaScript"), components: [
 						{kind: "ToggleButton", name: "enableJavascript", onChange: "togglePreferenceClick", preference: "enableJavascript", type: "Browser"}
 					]},
-					{kind: "LabeledContainer", caption: $L("Enable Flash"), components: [
-						{kind: "ToggleButton", name: "flashplugins", onChange: "togglePreferenceClick", preference: "flashplugins", type: "System"}
+					{kind: "LabeledContainer", caption: $L("Offer to translate pages"), components: [
+						{kind: "ToggleButton", name: "offerTranslate", onChange: "togglePreferenceClick", preference: "offerTranslate", type: "Browser"}
 					]},
 				]},
 				{kind: "Button", caption: $L("Clear Bookmarks"), onclick: "promptButtonClick", dialog: "clearBookmarksPrompt"},

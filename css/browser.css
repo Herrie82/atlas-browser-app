@@ -193,8 +193,13 @@
 	border-width: 2px 0;
 }
 
+/* Normalize every address-bar icon to one baseline: the ToolButton icons are background-image spans that
+ * default to baseline alignment (so they hang low), while the custom Image icons are middle-aligned. Force
+ * BOTH to inline-block + vertical-align:middle so all glyphs center on the same line as the bar. */
 .actionbar .enyo-tool-button .enyo-button-icon {
 	margin: 2px;
+	display: inline-block;
+	vertical-align: middle;
 }
 
 .actionbar .menu-container {
@@ -203,6 +208,23 @@
 
 .actionbar-tool-button {
 	padding: 0;
+}
+
+/* The show/hide-keyboard icon is a native 50x44 sysmgr asset — scale it to ~half so it matches the
+ * other ~32px address-bar icons (preserve the 50:44 aspect ratio). */
+.atlas-kb-button img,
+img.atlas-kb-button {
+	width: 34px;
+	height: 30px;
+	margin-left: 12px;   /* match the breathing room the other toolbar icons have */
+	margin-right: 14px;  /* keep it off the right edge of the address bar */
+}
+
+/* Center the custom Image-based icons (translate 文A, keyboard) vertically with the ToolButton icons,
+ * which otherwise sit on the text baseline and hang low in the address bar. */
+.atlas-translate-button img, img.atlas-translate-button,
+.atlas-kb-button img, img.atlas-kb-button {
+	vertical-align: middle;
 }
 
 .page-title {
@@ -664,6 +686,15 @@
 /* ---- Atlas list polish: tighter search spacing + shorter rows (search box keeps its default pill) ---- */
 .atlas-pw-search {
 	padding: 4px 8px;
+	/* the search field's box-center class piles on a 30px top/bottom margin — trim it to ~1/3 */
+	margin-top: 10px;
+	margin-bottom: 10px;
+}
+/* full-width separator between the search pill and the first list row (matches the inter-row dividers) */
+.atlas-list-separator {
+	height: 0;
+	border-top: 1px solid #101010;
+	-webkit-box-shadow: 0 1px 0 rgba(255,255,255,0.08);
 }
 .atlas-pw-row {
 	min-height: 0 !important;
@@ -677,32 +708,37 @@
 	-webkit-transform-origin: center left;
 }
 
-/* Legacy-style text-selection Copy bubble (compact dark pill with a downward tail, above the selection) */
+/* webOS-style text-selection Copy bubble: dark-grey rounded pill, soft edges, downward tail */
 .atlas-select-popover {
-	background: #1f1f21;
-	border: 1px solid #000;
-	border-radius: 6px;
-	padding: 6px 16px;
-	font-size: 15px;
-	font-weight: bold;
-	color: #fff;
+	font-family: Prelude, sans-serif;
+	font-size: 16px;
+	font-weight: normal;
+	color: #f2f2f2;
 	text-align: center;
 	white-space: nowrap;
-	-webkit-box-shadow: 0 2px 8px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.08);
-	background-image: -webkit-gradient(linear, left top, left bottom, from(#3a3a3c), to(#1f1f21));
+	padding: 8px 20px;
+	border: 0;
+	-webkit-border-radius: 14px;
+	border-radius: 14px;
+	text-shadow: 0 -1px 1px rgba(0,0,0,0.6);
+	/* NO inset shadow: LunaSysMgr's old WebKit draws inset box-shadows as a SQUARE outline that ignores the
+	 * border-radius, which made the pill look square. Just a soft outer drop shadow. */
+	-webkit-box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+	background-color: #454547;   /* solid fallback if the old -webkit-gradient parse fails */
+	background-image: -webkit-gradient(linear, left top, left bottom, from(#565658), to(#39393b));
 }
 .atlas-select-popover:active {
-	background-image: -webkit-gradient(linear, left top, left bottom, from(#1f1f21), to(#3a3a3c));
+	background-image: -webkit-gradient(linear, left top, left bottom, from(#39393b), to(#565658));
 }
-/* downward tail */
+/* downward tail (matches the pill's bottom colour) */
 .atlas-select-popover:after {
 	content: "";
 	position: absolute;
 	left: 50%;
 	bottom: -6px;
-	margin-left: -6px;
+	margin-left: -7px;
 	width: 0; height: 0;
-	border-left: 6px solid transparent;
-	border-right: 6px solid transparent;
-	border-top: 6px solid #1f1f21;
+	border-left: 7px solid transparent;
+	border-right: 7px solid transparent;
+	border-top: 7px solid #39393b;
 }

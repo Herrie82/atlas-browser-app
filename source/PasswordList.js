@@ -8,20 +8,19 @@ enyo.kind({
 	className: "basic-back",
 	events: {
 		onClose: "",
-		onEditPassword: ""
+		onEditPassword: "",
+		onImport: "",
+		onExport: ""
 	},
 	components: [
 		{name: "loginsService", kind: "DbService", dbKind: "org.webosports.logins:1", reCallWatches: true,
 			method: "find", onSuccess: "gotData", subscribe: true, onWatch: "refreshList"},
-		{kind: "Header", className: "enyo-header-dark", layoutKind: "HFlexLayout", align: "center", components: [
-			{kind: "Image", src: "images/chrome/secure-lock.png", style: "margin: 0 8px;"},
-			{content: $L("Passwords"), className: "header-title"}
-		]},
 		{className: "box-center atlas-pw-search", components: [
 			{name: "searchField", kind: "RoundedSearchInput", hint: $L("Search"),
 				autoCapitalize: "lowercase", autocorrect: false, spellcheck: false, autoWordComplete: false,
 				onchange: "processOnSearch", onCancel: "processOnCancel", keypressInputDelay: 300}
 		]},
+		{className: "atlas-list-separator"},
 		{name: "list", kind: "DbList", flex: 1, onQuery: "listQuery", onSetupRow: "listSetupRow", components: [
 			{name: "item", kind: "SwipeableItem", className: "atlas-pw-row", layoutKind: "HFlexLayout", tapHighlight: true,
 				onclick: "itemClick", onConfirm: "deleteItem", components: [
@@ -38,30 +37,17 @@ enyo.kind({
 			content: $L("No saved passwords"), showing: false},
 		{kind: "Toolbar", components: [
 			{kind: "GrabButton", onclick: "doClose"},
-			{flex: 1, kind: "Control"}
+			{flex: 1, kind: "Control"},
+			{name: "importBtn", icon: "images/chrome/toaster-icon-downloads.png", onclick: "importClick", style: "margin-right:4px"},
+			{name: "exportBtn", icon: "images/chrome/toaster-icon-upload.png", onclick: "exportClick", style: "margin-right:10px"}
 		]}
 	],
 	create: function() {
 		this.inherited(arguments);
 		this.filterString = undefined;
 	},
-	//* When shown as a toaster drawer over the start page, the start page's address bar holds
-	//* keyboard focus (StartPage.showingChanged forceFocus'es it), so tapping our search does
-	//* nothing until a real page is loaded. Release that focus and grab it for our search field.
-	showingChanged: function() {
-		this.inherited(arguments);
-		if (this.showing) {
-			if (document.activeElement && document.activeElement.blur) {
-				document.activeElement.blur();
-			}
-			enyo.asyncMethod(this, "focusSearch");
-		}
-	},
-	focusSearch: function() {
-		if (this.$.searchField && this.$.searchField.forceFocus) {
-			this.$.searchField.forceFocus();
-		}
-	},
+	//* Do NOT auto-focus the search on open — that pops the VKB and eats half the screen. The user taps
+	//* the search field when they actually want to filter.
 	//* DbList wants data: load all logins (usually few) and filter client-side in gotData.
 	listQuery: function(inSender, inQuery) {
 		return this.$.loginsService.call({query: {limit: 500}});
@@ -119,5 +105,18 @@ enyo.kind({
 	},
 	refreshList: function() {
 		this.$.list.refresh();
+	},
+	//* Import/export CSV. Toolbar buttons fire onclick 2-4x on LunaCE -> debounce so one tap = one run.
+	importClick: function() {
+		var now = (new Date()).getTime();
+		if (this._lastImport && (now - this._lastImport) < 800) { return; }
+		this._lastImport = now;
+		this.doImport();
+	},
+	exportClick: function() {
+		var now = (new Date()).getTime();
+		if (this._lastExport && (now - this._lastExport) < 800) { return; }
+		this._lastExport = now;
+		this.doExport();
 	}
 });

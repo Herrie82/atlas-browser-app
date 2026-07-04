@@ -49,6 +49,7 @@ enyo.kind({
 			},
 			{name: "browser", kind: "Browser",
 				onPageTitleChanged: "pageTitleChanged",
+				onTranslatePage: "translatePage",
 				onPageLoadStopped: "pageLoadStopped",
 				onFileLoad: "handleResource",
 				onAddBookmark: "addBookmark",
@@ -85,7 +86,7 @@ enyo.kind({
 						{kind: "RadioButton", value: "history", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-history.png", onclick: "showHistory"},
 						{kind: "RadioButton", value: "downloads", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-downloads.png", onclick: "showDownloads"},
 						{kind: "RadioButton", value: "passwords", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-passwords.png", onclick: "showPasswords"},
-						{kind: "RadioButton", value: "autofill", className: "enyo-radiobutton-dark", icon: "images/chrome/toaster-icon-passwords.png", onclick: "showAutofill"}
+						{kind: "RadioButton", value: "autofill", className: "enyo-radiobutton-dark", icon: "images/autofill-icon.png", onclick: "showAutofill"}
 					]}
 				]},
 				{name: "drawerPane", kind: "Pane", flex: 1, lazyViews: [
@@ -112,7 +113,9 @@ enyo.kind({
 					},
 					{name: "passwords", kind: "PasswordList",
 						onClose: "closeToaster",
-						onEditPassword: "showEditPasswordDialog"
+						onEditPassword: "showEditPasswordDialog",
+						onImport: "importPasswordsFromToaster",
+						onExport: "exportPasswordsClick"
 					},
 					{name: "autofill", kind: "AutofillList",
 						onClose: "closeToaster",
@@ -137,16 +140,15 @@ enyo.kind({
 			//{caption: $L("Find on Page"), onclick: "showFindOnPage"},
 			{name: "findMenuItem", caption: $L("Find on Page"), onclick: "showFindOnPage"},
 			{name: "readerMenuItem", caption: $L("Reading Mode"), onclick: "readerClick"},
-			{name: "translateMenuItem", caption: $L("Translate Page"), onclick: "translateClick"},
 			{name: "privateCardItem", caption: $L("New Private Card"), onclick: "newPrivateCardClick"},
 			{name: "preferencesItem", caption: $L("Preferences"), onclick: "preferencesClick"},
-			{name: "passwordsItem", caption: $L("Passwords"), onclick: "passwordsClick"},
-				{name: "importLoginsItem", caption: $L("Import passwords"), onclick: "importPasswordsClick"},
+			{name: "passwordsItem", caption: $L("Password Manager"), onclick: "passwordsClick"},
 			{name: "autofillItem", caption: $L("Autofill"), onclick: "autofillClick"},
 			{name: "printMenuItem", caption: $L("Print"), onclick: "printClick"},
 			{caption: $L("Help"), onclick: "helpClick"}
 		]},
-		{name: "loginImporter", kind: "LoginImporter", onImportDone: "loginImportDone"}
+		{name: "loginImporter", kind: "LoginImporter", onImportDone: "loginImportDone"},
+		{name: "loginExporter", kind: "LoginExporter", onExportDone: "loginExportDone"}
 	],
 	//* @protected
 	constructor: function() {
@@ -295,7 +297,6 @@ enyo.kind({
 		this.$.printMenuItem.setDisabled(!browser || this.isBrowserLoading());
 		this.$.findMenuItem.setDisabled(!browser);
 		this.$.readerMenuItem.setDisabled(!browser);
-		this.$.translateMenuItem.setDisabled(!browser || this.isBrowserLoading());
 		this.$.preferencesItem.setDisabled(this.isPreferencesShowing());
 		// One-shot arm: AppMenu items fire onclick TWICE on LunaCE (touch+mouse, seen ~2.5s apart here),
 		// which opened two private cards. Arm once per menu-open; the handler disarms after the first fire.
@@ -307,6 +308,7 @@ enyo.kind({
 			enableJavascript: "setEnableJavascript",
 			blockPopups: "setBlockPopups",
 			acceptCookies: "setAcceptCookies",
+			offerTranslate: "setOfferTranslate",
 		}
 		this.$.pane.viewByName("browser");
 		var o = inPreference == "clearHistory" || inPreference == "clearBookmarks" ? this : this.$.browser;
@@ -360,12 +362,25 @@ enyo.kind({
 			{_kind: kind, key: "blockPopups", value: true},
 			{_kind: kind, key: "acceptCookies", value: true},
 			{_kind: kind, key: "enableJavascript", value: true},
-			{_kind: kind, key: "rememberPasswords", value: true}
+			{_kind: kind, key: "rememberPasswords", value: true},
+			{_kind: kind, key: "offerTranslate", value: false}
 		];
 		if (inResponse.results.length == 0) {
 			this.$.browserPrefsService.call({objects: defaultBrowserPreferences}, {method: "put", onSuccess: "fetchPreferences"});
 		} else {
-			this.fetchPreferences();
+			// migrate existing installs: create any newly-introduced default prefs that have no record yet
+			// (e.g. offerTranslate) — otherwise a toggle's merge-by-key updates 0 rows and never persists.
+			var have = {};
+			for (var i = 0; i < inResponse.results.length; i++) { have[inResponse.results[i].key] = true; }
+			var missing = [];
+			for (var j = 0; j < defaultBrowserPreferences.length; j++) {
+				if (!have[defaultBrowserPreferences[j].key]) { missing.push(defaultBrowserPreferences[j]); }
+			}
+			if (missing.length) {
+				this.$.browserPrefsService.call({objects: missing}, {method: "put", onSuccess: "fetchPreferences"});
+			} else {
+				this.fetchPreferences();
+			}
 		}
 	},
 	fetchInitialPreferences: function() {
@@ -724,13 +739,10 @@ enyo.kind({
 	preferencesClick: function() {
 		this.gotoView("preferences");
 	},
-	// Open the current page through Google Translate (target = device language). AppMenu double-fires
-	// on LunaCE, so guard with the one-shot _menuArmed flag.
-	translateClick: function() {
-		if (!this._menuArmed) { return; }
-		this._menuArmed = false;
-		if (!this.isBrowserShowing()) { return; }
-		var url = this.$.browser.getUrl ? this.$.browser.getUrl() : this.$.browser.url;
+	// Open the current page through Google Translate (target = device language). Fired by the per-page
+	// translate bar (Browser.onTranslatePage) when the "Offer to translate pages" preference is on.
+	translatePage: function(inSender, inUrl) {
+		var url = inUrl || (this.$.browser.getUrl ? this.$.browser.getUrl() : this.$.browser.url);
 		if (!url || !(/^https?:\/\//i).test(url)) { return; }
 		// don't re-wrap an already-translated page
 		if (url.indexOf("translate.goog") >= 0 || url.indexOf("translate.google.com/translate") >= 0) { return; }
@@ -791,13 +803,28 @@ enyo.kind({
 	},
 	// CSV importer trigger: read a Chrome/Google Password Manager export from
 	// /media/internal/atlas-logins.csv and bulk-insert it into the logins store.
-	importPasswordsClick: function() {
-		// AppMenu items fire onclick twice (touch+mouse) -> two "Importing..." banners. One per menu-open.
-		if (!this._menuArmed) { return; }
-		this._menuArmed = false;
+	// Triggered by the import icon in the Password Manager toaster (PasswordList debounces the tap).
+	importPasswordsFromToaster: function() {
 		var params = enyo.json.stringify({dontLaunch: true});
 		enyo.windows.addBannerMessage($L("Importing passwords..."), params);
-		this.$.loginImporter.run();
+		this.$.loginImporter.run();   // has its own re-entry guard
+	},
+	// Triggered by the export icon in the Password Manager toaster.
+	exportPasswordsClick: function() {
+		var params = enyo.json.stringify({dontLaunch: true});
+		enyo.windows.addBannerMessage($L("Exporting passwords..."), params);
+		this.$.loginExporter.run();   // has its own re-entry guard
+	},
+	loginExportDone: function(inSender, inResult) {
+		var params = enyo.json.stringify({dontLaunch: true});
+		var msg;
+		if (!inResult || !inResult.ok) {
+			msg = $L("Password export failed: ") + ((inResult && inResult.error) || $L("unknown error"));
+		} else {
+			msg = enyo.macroize($L("Exported {$count} password(s) to {$path}"),
+				{count: inResult.count, path: inResult.path});
+		}
+		enyo.windows.addBannerMessage(msg, params);
 	},
 	loginImportDone: function(inSender, inResult) {
 		var params = enyo.json.stringify({dontLaunch: true});

@@ -25,10 +25,11 @@ enyo.kind({
 	components: [
 		{name: "historyService", kind: "DbService", dbKind: "com.palm.browserhistory:1", reCallWatches: true, method: "find", onSuccess: "gotHistoryData", subscribe: true, onWatch:"refreshList"},
 		{className: "box-center atlas-pw-search", components: [
-			{name: "searchField", kind: "RoundedSearchInput", hint: $L("Search history"),
+			{name: "searchField", kind: "RoundedSearchInput", hint: $L("Search"),
 				autoCapitalize: "lowercase", autocorrect: false, spellcheck: false, autoWordComplete: false,
 				onchange: "processOnSearch", onCancel: "processOnCancel", keypressInputDelay: 300}
 		]},
+		{className: "atlas-list-separator"},
 		{name:"list", kind:"DbList", flex:1, onQuery:"historyQuery", onSetupRow: "listSetupRow", desc:true, components: [
 			{name: "divider", kind: "Divider", showing: false},
 			{name: "item", kind: "SwipeableItem", layoutKind: "HFlexLayout", tapHighlight: true, onclick: "itemClick", onConfirm: "deleteItem", components: [

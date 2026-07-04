@@ -29,7 +29,8 @@ enyo.kind({
 		searchPreferences: {},
 		defaultSearch: "",
 		progress: 0,
-		loading: false
+		loading: false,
+		showTranslate: false
 	},
 		backHistory: [],
 	forwardHistory: [],
@@ -47,7 +48,8 @@ enyo.kind({
 		onShareLink: "",
 		onOpenBookmarks: "",
 		onNewCard: "",
-		onHistorySelected: ""
+		onHistorySelected: "",
+		onTranslate: ""
 	},
 	components: [
     	{kind: "Control", showing: false, name: "title", className: "page-title enyo-text-ellipsis", content: "Untitled"},
@@ -58,8 +60,9 @@ enyo.kind({
 			{kind: "ToolButton", name: "share", className: "actionbar-tool-button", icon: "images/chrome/menu-icon-share.png", onclick: "showSharePopup"},
 			{kind: "ToolButton", name: "newcard", className: "actionbar-tool-button", icon: "images/chrome/menu-icon-newcard.png", onclick: "doNewCard"},
 			{kind: "ToolButton", name: "bookmarks", className: "actionbar-tool-button", icon: "images/chrome/menu-icon-bookmark.png", onclick: "doOpenBookmarks"},
-			{kind: "Image", className: "actionbar-tool-button", src: "../../sysmgr/images/keyboard-tablet/icon-hide-keyboard.png", onclick: "changeKB"},
-		]},	
+			{name: "translateButton", kind: "Image", className: "actionbar-tool-button atlas-translate-button", src: "images/translate-icon.png", showing: false, onclick: "doTranslateClick"},
+			{name: "kbButton", kind: "Image", className: "actionbar-tool-button atlas-kb-button", src: "images/icon-hide-keyboard.png", onclick: "changeKB"},
+		]},
 		{name: "sharePopup", className: "launch-popup",  kind: "Menu", components: [
 			{caption: $L("Add Bookmark"), onclick: "doAddBookmark"},
 			{caption: $L("Share Link"), onclick: "doShareLink"},
@@ -257,6 +260,13 @@ enyo.kind({
 		enyo.keyboard.forceShow(0);
 		}
 	},
+	//* Google Translate button: shown in the address bar only when "Offer to translate pages" is enabled.
+	showTranslateChanged: function() {
+		if (this.$.translateButton) { this.$.translateButton.setShowing(this.showTranslate); }
+	},
+	doTranslateClick: function() {
+		this.doTranslate();
+	}
  });
 
 enyo.kind({
