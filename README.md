@@ -46,6 +46,11 @@ modern web-platform support, on the original hardware (Adreno 220, Cortex-A8, ke
 - **Large clipboard payloads** — the yap IPC buffers are now **dynamically growable up to 512 KB**
   (24-bit length header) instead of a fixed 16 KB, so a full **Select All → Copy** no longer overflows
   the pipe / crashes the client. (BrowserServer + BrowserAdapter rebuilt in lockstep.)
+- **Editable-field context menu** — long-press an input for **Select \| Select All \| Paste**; with a
+  word selected, **Cut \| Copy \| Paste**. Word / select-all work *inside* `INPUT`/`TEXTAREA` (via
+  `setSelectionRange`, reported as an editable selection so no drag markers are drawn), and paste inserts
+  through the engine's `InsertText` command — falling back to the last in-browser copy, since the WPE
+  clipboard read is unavailable. Double-fire-debounced so a paste inserts once.
 - **Password Manager** — a single app-menu entry / toaster tab: searchable list, swipe-to-delete,
   tap-to-edit dialog with **show/hide password**, secure-lock iconography, and **import + export CSV**
   icons (Chrome / Google Password Manager format) right in the toaster.
@@ -61,11 +66,19 @@ modern web-platform support, on the original hardware (Adreno 220, Cortex-A8, ke
   show/hide-keyboard button.
 - **SSL / HTTP-auth dialogs** — certificate and basic-auth prompts.
 - **Private browsing** card (ephemeral session, in-memory cookies/cache/history).
-- **Start page** — bookmark grid with drag-to-reorder tiles.
+- **Start page** — bookmark grid with **launcher-style drag-to-reorder**: long-press lifts a tile to
+  follow the finger while the sibling tiles reflow to open the drop gap (no drop-highlight box); the
+  drop target is the nearest slot, so a tile can be moved before the first or after the last. Long-press
+  and release in place instead for Open / Open in New Card / Remove.
 - **Content blocker** — WebKit content-rules blocking ads **and** trackers (StevenBlack hosts +
   curated regional list).
 - **Reading mode** — reader view of the loaded article.
 - **TLS 1.3** — process-private OpenSSL 1.1 for the BrowserServer (system `libssl` untouched).
+- **Stability hardening** — a static + dynamic analysis pass (cppcheck / clang-tidy / valgrind +
+  ASan/UBSan) fixed a class of **use-after-free** bugs where async engine callbacks and timers could fire
+  after their card had been freed (they now check a live-page set), plus destructor leaks and yap-IPC
+  length-validation / leak issues. The 512 KB dynamic yap buffer path was verified clean under a
+  host-native sanitizer harness.
 
 ## Status
 
@@ -74,7 +87,9 @@ The stack is now **atlas-only**: the earlier Isis engine has been fully **decomm
 removed. Canonical build/deploy paths are pinned in `~/webos/wpe/DEPLOY-PATHS.md` (there is exactly
 one `BrowserServer-atlas` binary and one `BrowserAdapterAtlas.so` plugin — deploying anywhere else
 silently no-ops). Text selection (yellow highlight, drag markers, Copy/Select All, tap-dismiss, 512 KB
-copy) is committed and working across all four repos.
+copy), the **editable-field menu with paste** (in inputs and on normal pages), and the **launcher-style
+start-page reorder** are committed and verified on-device. A **static + dynamic memory-safety pass**
+(use-after-free guards, yap fixes) is committed and deployed on both the server and client sides.
 
 ## Known issues / limitations
 
@@ -88,9 +103,9 @@ copy) is committed and working across all four repos.
 
 ## To-do / roadmap
 
-- **Paste-on-input** — editable-field context menu: **Select \| Select All \| Paste** on an empty
-  field, **Cut \| Copy \| Paste** on a selection (reuses the existing `insertStringAtCursor` engine
-  command). *In progress.* Needs cross-app clipboard **read** (via `execCommand('paste')`) validated.
+- **Cross-app clipboard read** — paste currently prefers the system clipboard but the WPE-engine
+  `execCommand('paste')` read is blocked, so paste falls back to the last *in-browser* copy. A real
+  cross-app read (a webOS clipboard-service bridge) would let Atlas paste text copied in other apps.
 - **Selection stale-yellow** repaint — cheaper path than a full readback (deliver the WebProcess's
   spontaneous repaint frame instead of forcing one).
 - **WPE memory tuning** (researched, not yet applied):
