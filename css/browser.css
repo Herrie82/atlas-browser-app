@@ -690,11 +690,12 @@ img.atlas-kb-button {
 	margin-top: 10px;
 	margin-bottom: 10px;
 }
-/* full-width separator between the search pill and the first list row (matches the inter-row dividers) */
+/* full-width separator between the search pill and the first list row. Matches the soft webOS etched
+ * divider (enyo Item = silver shadow line + white highlight below), NOT a hard dark rule. */
 .atlas-list-separator {
 	height: 0;
-	border-top: 1px solid #101010;
-	-webkit-box-shadow: 0 1px 0 rgba(255,255,255,0.08);
+	border-bottom: 1px solid silver;
+	-webkit-box-shadow: 0 1px 0 #fff;
 }
 .atlas-pw-row {
 	min-height: 0 !important;
@@ -716,7 +717,7 @@ img.atlas-kb-button {
 	color: #f2f2f2;
 	text-align: center;
 	white-space: nowrap;
-	padding: 8px 20px;
+	padding: 0;
 	border: 0;
 	-webkit-border-radius: 14px;
 	border-radius: 14px;
@@ -727,8 +728,28 @@ img.atlas-kb-button {
 	background-color: #454547;   /* solid fallback if the old -webkit-gradient parse fails */
 	background-image: -webkit-gradient(linear, left top, left bottom, from(#565658), to(#39393b));
 }
-.atlas-select-popover:active {
-	background-image: -webkit-gradient(linear, left top, left bottom, from(#39393b), to(#565658));
+/* segmented buttons inside the pill: Copy | Select All */
+.atlas-select-btn {
+	display: inline-block;
+	padding: 8px 18px;
+	vertical-align: middle;
+}
+.atlas-select-btn:active {
+	background-color: rgba(255,255,255,0.16);
+}
+.atlas-select-btn.enyo-first, .atlas-select-popover .atlas-select-btn:first-child {
+	-webkit-border-top-left-radius: 14px; -webkit-border-bottom-left-radius: 14px;
+}
+.atlas-select-popover .atlas-select-btn:last-child {
+	-webkit-border-top-right-radius: 14px; -webkit-border-bottom-right-radius: 14px;
+}
+/* vertical divider between the two buttons (etched: dark line + faint highlight) */
+.atlas-select-sep {
+	display: inline-block;
+	width: 0; height: 22px;
+	vertical-align: middle;
+	border-left: 1px solid rgba(0,0,0,0.45);
+	-webkit-box-shadow: 1px 0 0 rgba(255,255,255,0.08);
 }
 /* downward tail (matches the pill's bottom colour) */
 .atlas-select-popover:after {

@@ -129,12 +129,23 @@ enyo.kind({
 		// start/end rects on the "selectionBounds" channel; we pin the two drag markers (arrows) at the
 		// selection ends and a Copy popover above it. Copy ferries the selection back via copiedText ->
 		// clipboard. Markers are position:fixed (reported coords are window/pageX,Y space).
-		{name: "selStart", kind: "Image", src: "images/webkit/topmarker.png", showing: false,
-			style: "position:fixed; z-index:1000; width:18px; height:15px;"},
-		{name: "selEnd", kind: "Image", src: "images/webkit/bottommarker.png", showing: false,
-			style: "position:fixed; z-index:1000; width:18px; height:15px;"},
-		{name: "selPopover", className: "atlas-select-popover", showing: false,
-			style: "position:fixed; z-index:1001;", content: $L("Copy"), onclick: "copySelectionClick"}
+		// 30x30 transparent hit area with the 18x15 arrow centered inside — a much bigger grab zone so the
+		// drag lands on the marker instead of falling through to the page (which then scrolls).
+		{name: "selStart", kind: "Control", showing: false,
+			ondragstart: "selMarkerDragStart", ondrag: "selMarkerDrag", ondragfinish: "selMarkerDragFinish",
+			style: "position:fixed; z-index:1000; width:30px; height:30px;", components: [
+			{kind: "Image", src: "images/webkit/topmarker.png", style: "position:absolute; left:6px; top:15px; width:18px; height:15px;"}
+		]},
+		{name: "selEnd", kind: "Control", showing: false,
+			ondragstart: "selMarkerDragStart", ondrag: "selMarkerDrag", ondragfinish: "selMarkerDragFinish",
+			style: "position:fixed; z-index:1000; width:30px; height:30px;", components: [
+			{kind: "Image", src: "images/webkit/bottommarker.png", style: "position:absolute; left:6px; top:0px; width:18px; height:15px;"}
+		]},
+		{name: "selPopover", className: "atlas-select-popover", showing: false, style: "position:fixed; z-index:1001;", components: [
+			{name: "copyBtn", className: "atlas-select-btn", content: $L("Copy"), onclick: "copySelectionClick"},
+			{className: "atlas-select-sep"},
+			{name: "selectAllBtn", className: "atlas-select-btn", content: $L("Select All"), onclick: "selectAllSelectionClick"}
+		]}
     ],
 		loginsKind: "org.webosports.logins:1",
         changedUrl: false,
@@ -339,10 +350,19 @@ enyo.kind({
 	// The markers/popover are position:fixed on screen, so once the page scrolls they'd go stale ->
 	// auto-hide + clear the selection when a real scroll happens (a new long-press re-selects).
 	browserScrolled: function(inSender, inX, inY) {
+		this._lastScrollX = inX;
 		this._lastScrollY = inY;
-		if (this._selBounds && Math.abs(inY - (this._selBaseScrollY || 0)) > 6) {
-			this.viewCall("clearSelection", []);
-			this.hideSelectionUI();
+		// Don't clear while a marker is being dragged (the drag itself must not count as a scroll). Otherwise
+		// auto-hide on a genuine scroll — but use a generous threshold so the flick's settle/recenter tail
+		// (which posts a few late scroll updates just after selection) doesn't nuke a fresh selection.
+		if (this._dragMarker === undefined || this._dragMarker === null) {
+			// grace window after a fresh selection: the flick's settle/recenter posts a few late scroll
+			// updates that would otherwise nuke the selection right after it appears ("yellow disappears").
+			var sinceSel = (new Date()).getTime() - (this._selShownMs || 0);
+			if (this._selBounds && sinceSel > 700 && Math.abs(inY - (this._selBaseScrollY || 0)) > 24) {
+				this.viewCall("clearSelection", []);
+				this.hideSelectionUI();
+			}
 		}
 	},
 	// Show/hide the address-bar Google Translate icon based on the "Offer to translate pages" preference.
@@ -567,21 +587,20 @@ enyo.kind({
 		if (!b || !b.len) { this.hideSelectionUI(); return; }
 		this._selBounds = b;
 		this._selBaseScrollY = this._lastScrollY || 0;   // scroll pos at selection time (auto-hide on scroll)
-		// The reported coords are true window/screen coords, but enyo Panes carry a -webkit-transform
-		// which makes position:fixed relative to the pane, not the viewport -> markers land off. Move the
-		// overlay nodes to document.body (no transformed ancestor) so fixed positioning is real-screen.
+		// The engine now reports rects in VISIBLE-viewport space (it already folded the pan-model scroll math:
+		// m_renderedY on the way in, m_renderedY - m_scrollY on the way out). So the app only has to add the
+		// WebView's on-screen offset (top ~= address-bar height, left ~= 0) to hit real-screen coords. The
+		// overlay nodes are reparented to document.body first because enyo Panes carry a -webkit-transform
+		// that would otherwise make position:fixed relative to the pane instead of the viewport.
 		this._reparentSelectionUI();
-		// The engine reports coords relative to the web CONTENT (0 = top of the page area). The markers
-		// are position:fixed on document.body (real screen), so add the WebView's live screen offset
-		// (top ~= address-bar height, left ~= 0) to land on the actual text.
 		var vr = this.$.view.hasNode() ? this.$.view.node.getBoundingClientRect() : {top: 0, left: 0};
 		var ox = Math.round(vr.left), oy = Math.round(vr.top);
-		// top marker (18x15): its bottom points at the selection start
-		this.$.selStart.applyStyle("left", (b.sx - 9 + ox) + "px");
-		this.$.selStart.applyStyle("top", (b.sy - 15 + oy) + "px");
+		// 30x30 hit box; the arrow inside is offset so its tip sits at the selection end. selStart arrow tip
+		// = box (15,30) so box goes at (sx-15, sy-30); selEnd arrow tip = box (15,0) so box at (ex-15, ey).
+		this.$.selStart.applyStyle("left", (b.sx - 15 + ox) + "px");
+		this.$.selStart.applyStyle("top", (b.sy - 30 + oy) + "px");
 		this.$.selStart.setShowing(true);
-		// bottom marker: its top points at the selection end
-		this.$.selEnd.applyStyle("left", (b.ex - 9 + ox) + "px");
+		this.$.selEnd.applyStyle("left", (b.ex - 15 + ox) + "px");
 		this.$.selEnd.applyStyle("top", (b.ey + oy) + "px");
 		this.$.selEnd.setShowing(true);
 		// Copy bubble centered above the selection (clamp on-screen). Single-line selection uses the
@@ -589,9 +608,11 @@ enyo.kind({
 		var midX = (b.ey - b.sy < b.sh + 4) ? Math.round((b.sx + b.ex) / 2) : b.sx;
 		// sit the bubble above the selection AND above the top marker (which occupies sy-15..sy) so they
 		// don't overlap; its tail then points down toward the marker/selection.
-		this.$.selPopover.applyStyle("left", Math.max(4, midX - 40 + ox) + "px");
 		this.$.selPopover.applyStyle("top", Math.max(4, b.sy - 60 + oy) + "px");
 		this.$.selPopover.setShowing(true);
+		// center by the popover's real width (it's now Copy | Select All, so wider than the old single button)
+		var pw = this.$.selPopover.hasNode() ? this.$.selPopover.node.offsetWidth : 150;
+		this.$.selPopover.applyStyle("left", Math.max(4, midX - Math.round(pw / 2) + ox) + "px");
 	},
 	_reparentSelectionUI: function() {
 		if (this._selReparented) { return; }
@@ -607,6 +628,37 @@ enyo.kind({
 		if (this.$.selStart) { this.$.selStart.setShowing(false); }
 		if (this.$.selEnd) { this.$.selEnd.setShowing(false); }
 		if (this.$.selPopover) { this.$.selPopover.setShowing(false); }
+	},
+	// --- drag the start/end markers to grow/shrink the selection ---
+	// selEnd drags the FOCUS end (whichEnd=1, anchor stays at the start); selStart drags the start
+	// (whichEnd=0, anchor stays at the end). The engine extends the selection and re-reports its bounds on
+	// "selectionBounds" -> engineSelectionBounds repositions the markers + popover to follow the drag.
+	selMarkerDragStart: function(inSender, inEvent) {
+		if (!this._selBounds) { return true; }
+		this._dragMarker = (inSender.name === "selEnd") ? 1 : 0;
+		this._dragLastMs = 0;
+		this.$.selPopover.setShowing(false);   // hide the Copy bubble while dragging
+		return true;   // claim the gesture so it doesn't scroll the page
+	},
+	selMarkerDrag: function(inSender, inEvent) {
+		if (this._dragMarker === undefined || this._dragMarker === null) { return true; }
+		// throttle: the drag fires rapidly and each call runs JS in the engine
+		var now = (new Date()).getTime();
+		if (this._dragLastMs && (now - this._dragLastMs) < 40) { return true; }
+		this._dragLastMs = now;
+		// convert window coords -> "page space minus header" (content-relative); the adapter adds the scroll
+		var vr = this.$.view.hasNode() ? this.$.view.node.getBoundingClientRect() : {top: 0, left: 0};
+		var cx = Math.round(inEvent.pageX - vr.left);
+		var cy = Math.round(inEvent.pageY - vr.top);
+		this.viewCall("extendSelectionTo", [this._dragMarker, cx, cy]);
+		return true;
+	},
+	selMarkerDragFinish: function(inSender, inEvent) {
+		this._dragMarker = null;
+		this.viewCall("setDragMode", [false]);   // re-enable normal scrolling
+		// re-show the Copy bubble now the drag is done (engineSelectionBounds will place it on the next report)
+		if (this._selBounds) { this.$.selPopover.setShowing(true); }
+		return true;
 	},
 	copySelectionClick: function() {
 		// engine runs Copy + ferries the selection text back via copiedText -> engineCopiedText (clipboard).
