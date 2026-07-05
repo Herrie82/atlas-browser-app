@@ -280,6 +280,14 @@ enyo.kind({
 			this.closeSearchPopup();
 			return;
 		}
+		// file:// URLs (local files) are valid but enyo.uri.isValidScheme/isValidUri reject them
+		// (unknown scheme + empty host for file:///path), so they'd wrongly fall through to a Google
+		// search. Load directly, like the atlas: case above.
+		if (/^file:\/\//i.test(inValue)) {
+			this.doLoad(inValue);
+			this.closeSearchPopup();
+			return;
+		}
 		var uri = enyo.uri.parseUri(inValue);
 		if ((enyo.uri.isValidScheme(uri) && this.isUri(inValue, uri)) || (enyo.windowParams.allowAllSchemes && uri.scheme)) {
 			this.doLoad(inValue);
