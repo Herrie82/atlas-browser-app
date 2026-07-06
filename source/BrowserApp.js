@@ -40,6 +40,10 @@ enyo.kind({
 		{name: "launchApplicationService", kind: "PalmService", service: enyo.palmServices.application, method: "open", onFailure: "gotResourceError"},
 		{name: "addToLauncherService", kind: "PalmService", service: enyo.palmServices.application, method: "addLaunchPoint"},
 		{name: "resourceInfoService", kind: "PalmService", service: enyo.palmServices.application, method: "getResourceInfo", onSuccess: "gotResourceInfo", onFailure: "gotResourceError"},
+		{name: "updater", kind: "Updater", onUpdateFound: "onUpdateFound"},
+		{name: "updatePopup", kind: "AcceptCancelPopup", acceptCaption: $L("Update"), cancelCaption: $L("Not Now"), onResponse: "updateResponse", components: [
+			{name: "updateMessage", className: "browser-dialog-body enyo-text-body ", allowHtml: true}
+		]},
 		{kind: enyo.Pane, flex: 1, height: "100%", lazyViews: [
 			{name: "startPage", kind: "StartPage", 
 				onUrlChange: "processUrlChange",
@@ -205,6 +209,30 @@ enyo.kind({
 		this.showBookmarks();
 		//this.showAppMenu();
 		//this.resize();
+		// Auto-update: check App Museum II a few seconds after launch (don't compete with the initial load).
+		if (window.PalmSystem && this.$.updater) {
+			var self = this;
+			setTimeout(function() { self.$.updater.checkForUpdate(); }, 6000);
+		}
+	},
+	// Updater fired: a strictly-newer build exists — confirm with the user before handing it to Preware.
+	onUpdateFound: function(inSender, inInfo) {
+		this.pendingUpdate = inInfo;
+		this.$.updatePopup.validateComponents();
+		this.$.updateMessage.setContent(
+			$L("A new version of Atlas Web") + " (" + inInfo.version + ") " + $L("is available.") +
+			(inInfo.versionNote ? "<br><br>" + inInfo.versionNote : ""));
+		this.$.updatePopup.openAtCenter();
+	},
+	// User's response to the update prompt — on accept, launch Preware to install the IPK.
+	updateResponse: function(inSender, inAccepted) {
+		if (inAccepted && this.pendingUpdate && this.pendingUpdate.downloadURI) {
+			this.$.launchApplicationService.call({
+				id: "org.webosinternals.preware",
+				params: {type: "install", file: this.pendingUpdate.downloadURI}
+			});
+		}
+		this.pendingUpdate = null;
 	},
 	processQueryString: function() {
 		var q = location.search.slice(1), queryArgs = {};

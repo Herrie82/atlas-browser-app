@@ -43,6 +43,7 @@ enyo.depends(
 	"source/ReaderView.js",
 	"source/AcceptCancelPopup.js",
 	"source/VerticalAcceptCancelPopup.js",
+	"source/Updater.js",
 	"source/BrowserPrompt.js",
 	"source/BookmarkDialog.js",
     "source/ShareLinkDialog.js",
