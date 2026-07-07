@@ -83,6 +83,7 @@ enyo.kind({
 	_readerWrap: function(html) {
 		return '<div style="font-family:Prelude,\'Helvetica Neue\',sans-serif;font-size:17px;line-height:1.55;padding:14px 16px;color:#1a1a1a;">' + html + '</div>';
 	},
+	// UNUSED/TODO(audit A2-6): no caller or enyo handler-wiring found — revisit in detail before deleting.
 	_readerSpinner: function(msg) {
 		return this._readerWrap(
 			'<div style="text-align:center;padding:44px 16px;">' +

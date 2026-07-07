@@ -256,6 +256,7 @@ enyo.kind({
 		this.$.resultsUrl.content = enyo.string.applyFilterHighlight(item.url, this._value, "addressbar-highlight");
 		return true;
 	},
+	// UNUSED/TODO(audit A2-6): no caller or enyo handler-wiring found — revisit in detail before deleting.
 	highlightResultText: function(inText) {
 		var i = inText.search(new RegExp(this._value, "i"));
 		if (i <=0) {

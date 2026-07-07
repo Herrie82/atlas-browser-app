@@ -762,6 +762,7 @@ enyo.kind({
 		this.viewCall("selectAll", []);
 		return true;
 	},
+	// UNUSED/TODO(audit A2-6): no caller or enyo handler-wiring found — revisit in detail before deleting.
 	doneSelectionClick: function() {
 		this.viewCall("clearSelection", []);
 		this.viewCall("disableSelectionMode", []);
@@ -995,6 +996,7 @@ enyo.kind({
 		var icon = m ? ("faviconcache/fav_" + m[1].replace(/[^A-Za-z0-9.\-]/g, "_") + ".png") : "";
 		return {thumbnailFile: icon, iconFile32: icon, iconFile64: icon};
 	},
+	// UNUSED/TODO(audit A2-6): no caller or enyo handler-wiring found — revisit in detail before deleting.
 	deleteImages: function(inImages) {
 		for (var i=0, image; image=inImages[i]; i++) {
 			this.log(image);
