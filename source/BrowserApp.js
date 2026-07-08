@@ -199,6 +199,13 @@ enyo.kind({
 		// write to history (the BS session is already ephemeral, but history is the app's own DB).
 		this.isPrivate = !!(p.webviewId && p.webviewId.indexOf("private") === 0);
 		var url = p.target || p.url;
+		// #25 DIRECT-RENDER TEST (fb1/alpha hole): when the target URL carries the "atlasfs" marker,
+		// request webOS card fullscreen -> CardWindow::fullScreenEnabled(true) -> allowDirectRendering
+		// -> LunaSysMgr unblanks fb1 and the card renders into it. Gated so normal launches are unaffected.
+		if (url && url.indexOf("atlasfs") >= 0 && window.PalmSystem && window.PalmSystem.enableFullScreenMode) {
+			try { window.PalmSystem.hasAlphaHole = true; window.PalmSystem.enableFullScreenMode(true);
+				enyo.log("[Atlas] #25 enableFullScreenMode(true)+hasAlphaHole for direct-render test"); } catch(e){ enyo.log("[Atlas] #25 fs err "+e); }
+		}
 		if (url && !this.isAtlasHome(url)) {
 			this.setUrl(url); // this opens the browser view
 		} else if (p.webviewId) {
@@ -337,6 +344,7 @@ enyo.kind({
 			blockPopups: "setBlockPopups",
 			acceptCookies: "setAcceptCookies",
 			offerTranslate: "setOfferTranslate",
+			autoplayWithSound: "setAutoplayWithSound",
 		}
 		this.$.pane.viewByName("browser");
 		var o = inPreference == "clearHistory" || inPreference == "clearBookmarks" ? this : this.$.browser;
@@ -390,6 +398,7 @@ enyo.kind({
 			{_kind: kind, key: "blockPopups", value: true},
 			{_kind: kind, key: "acceptCookies", value: true},
 			{_kind: kind, key: "enableJavascript", value: true},
+			{_kind: kind, key: "autoplayWithSound", value: false},
 			{_kind: kind, key: "rememberPasswords", value: true},
 			{_kind: kind, key: "offerTranslate", value: false}
 		];

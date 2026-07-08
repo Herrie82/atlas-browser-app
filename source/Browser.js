@@ -218,6 +218,9 @@ enyo.kind({
 	setAcceptCookies: function(inAccept) {
 		this.viewCall("setAcceptCookies", [inAccept]);
 	},
+	setAutoplayWithSound: function(inEnable) {
+		this.viewCall("setAutoplayWithSound", [inEnable]);
+	},
 	clearHistory: function() {
 		this.viewCall("clearHistory");
 	},
