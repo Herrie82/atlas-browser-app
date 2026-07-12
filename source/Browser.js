@@ -20,7 +20,11 @@ enyo.kind({
 		url: "",
 		searchPreferences: {},
 		defaultSearch: "",
-		offerTranslate: false
+		offerTranslate: false,
+		// MODE 2 (viewport/low-memory): when true, this card's loads are tagged with the internal
+		// "atlas-simple:" marker so BS renders viewport-only (mult=1) instead of the tall pan buffer —
+		// for non-scrolling cards (OAuth popups, app SPAs). Set from the launch param mode=simple.
+		simpleMode: false
 	},
 	events: {
 		onPageTitleChanged: "",
@@ -250,7 +254,18 @@ enyo.kind({
  	},
 	urlChanged: function() {
 		this.log(this.url);
-		this.$.view.setUrl(this.url);
+		// MODE 2: tag ONLY the load with the internal "atlas-simple:" marker (BS parses+strips it -> mult=1).
+		// The address bar (actionbar.setUrl below) keeps the clean URL. Composes with the private marker
+		// (atlas-private:atlas-simple:URL — private stays the outer prefix, matching BS's parse order).
+		var loadUrl = this.url;
+		if (this.simpleMode && loadUrl && loadUrl.indexOf("atlas-simple:") < 0 && loadUrl.indexOf("about:") !== 0) {
+			if (loadUrl.indexOf("atlas-private:") === 0) {
+				loadUrl = "atlas-private:atlas-simple:" + loadUrl.substring(14);
+			} else {
+				loadUrl = "atlas-simple:" + loadUrl;
+			}
+		}
+		this.$.view.setUrl(loadUrl);
 		this.$.actionbar.setLoading(true);
 		this.$.actionbar.setUrl(this.url);
 	},

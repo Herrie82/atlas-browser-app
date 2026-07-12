@@ -198,6 +198,10 @@ enyo.kind({
 		// Private browsing: a card whose webviewId is tagged "private" (New Private Card) must NOT
 		// write to history (the BS session is already ephemeral, but history is the app's own DB).
 		this.isPrivate = !!(p.webviewId && p.webviewId.indexOf("private") === 0);
+		// MODE 2 (viewport / low-memory): optional launch param mode=simple for cards that don't page-scroll
+		// (OAuth2 popups, app SPAs like web.whatsapp.com). Flag the browser widget so it tags loads with the
+		// internal atlas-simple: marker (BS -> mult=1). Omitted -> default scroll mode (backward compatible).
+		if (this.$.browser) { this.$.browser.simpleMode = (p.mode === "simple"); }
 		var url = p.target || p.url;
 		// #25 DIRECT-RENDER TEST (fb1/alpha hole): when the target URL carries the "atlasfs" marker,
 		// request webOS card fullscreen -> CardWindow::fullScreenEnabled(true) -> allowDirectRendering
