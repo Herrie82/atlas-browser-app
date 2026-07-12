@@ -199,9 +199,10 @@ enyo.kind({
 		// write to history (the BS session is already ephemeral, but history is the app's own DB).
 		this.isPrivate = !!(p.webviewId && p.webviewId.indexOf("private") === 0);
 		// MODE 2 (viewport / low-memory): optional launch param mode=simple for cards that don't page-scroll
-		// (OAuth2 popups, app SPAs like web.whatsapp.com). Flag the browser widget so it tags loads with the
-		// internal atlas-simple: marker (BS -> mult=1). Omitted -> default scroll mode (backward compatible).
-		if (this.$.browser) { this.$.browser.simpleMode = (p.mode === "simple"); }
+		// (OAuth2 popups, app SPAs like web.whatsapp.com). Stash it here; browserShown() sets it on the browser
+		// widget right before the load (where $.browser definitely exists). Omitted -> default scroll mode.
+		this._launchSimple = (p.mode === "simple");
+		enyo.log("[Atlas] launch mode=" + p.mode + " simple=" + this._launchSimple + " target=" + (p.target || p.url || ""));
 		var url = p.target || p.url;
 		// #25 DIRECT-RENDER TEST (fb1/alpha hole): when the target URL carries the "atlasfs" marker,
 		// request webOS card fullscreen -> CardWindow::fullScreenEnabled(true) -> allowDirectRendering
@@ -311,6 +312,7 @@ enyo.kind({
 		setTimeout(enyo.hitch(this, function() {
 			this.$.browser.viewCall("activate");
 			if (inRefresh || !this.$.browser.getUrl()) {
+				this.$.browser.simpleMode = !!this._launchSimple;   // MODE 2: set before the load (urlChanged tags it)
 				this.$.browser.setUrl(this.url);
 			}
 		}), 1);
