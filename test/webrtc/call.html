@@ -1,0 +1,143 @@
+<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Atlas WebRTC receive test</title>
+<body style="font:15px monospace;padding:8px">
+<h2 id=role>...</h2>
+<button id=go style="font-size:20px;padding:10px">START</button>
+<pre id=log></pre>
+<script>
+const Q=new URLSearchParams(location.search);
+const ROLE=Q.get('role')||'caller';
+const ROOM=Q.get('room')||'atlas';
+const BASE=location.origin;
+document.getElementById('role').textContent='ROLE: '+ROLE+'  ROOM: '+ROOM;
+let _logbuf='';
+const L=(m)=>{document.getElementById('log').textContent+=m+"\n";console.log(m);
+  _logbuf+=m+"\n";
+  // mirror the on-screen log back to the signaling server so it can be read remotely (curl /get?key=clog_<role>)
+  try{fetch(BASE+'/post?room='+ROOM+'&key=clog_'+ROLE,{method:'POST',body:_logbuf});}catch(e){}};
+const post=(k,v)=>fetch(BASE+'/post?room='+ROOM+'&key='+k,{method:'POST',body:v});
+const get=async(k)=>{const r=await fetch(BASE+'/get?room='+ROOM+'&key='+k);return await r.text();};
+const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+async function poll(k){for(;;){const v=await get(k);if(v)return v;await sleep(700);}}
+// wait until ICE gathering completes so the SDP carries all candidates (non-trickle)
+function iceDone(pc){return new Promise(res=>{if(pc.iceGatheringState==='complete')return res();
+  pc.onicegatheringstatechange=()=>{if(pc.iceGatheringState==='complete')res();};
+  setTimeout(res,3000);});}    // fallback after 3s
+
+const cfg={iceServers:[{urls:'stun:stun.l.google.com:19302'}]};
+
+// Keep ONLY the real LAN host candidate (UDP, 192.168.1.x). The laptop also gathers unreachable
+// VM/docker host candidates (192.168.122.x, 172.16.x) and a public srflx; advertising those just
+// makes the TouchPad waste ICE connectivity checks on dead paths -> slow/flaky ICE. Both peers are
+// on 192.168.1.x, so the single UDP host candidate there is the one and only path that works.
+function filterSdp(sdp){
+  return sdp.split(/\r?\n/).filter(l=>{
+    if(!l.startsWith('a=candidate:')) return true;
+    const p=l.split(' '); const ip=p[4]||'';
+    if(p[2]!=='UDP') return false;                              // drop TCP candidates
+    if(l.includes('typ host')) return ip.startsWith('192.168.1.'); // real LAN host only (drop VM/docker)
+    if(l.includes('typ srflx')) return true;                    // keep srflx as a fallback path
+    return false;
+  }).join('\r\n');
+}
+
+async function caller(){
+  const pc=new RTCPeerConnection(cfg);
+  // Source select: ?src=mic (default) sends your real laptop microphone -> you TALK and hear it on
+  // the TouchPad. ?src=tone sends a constant 440Hz sine (steady signal, handy for A/B debugging).
+  // getUserMedia over the localhost secure context also grants mic permission so the browser emits
+  // REAL LAN-IP ICE candidates instead of unresolvable .local mDNS ones (that was the ICE blocker).
+  const src=(Q.get('src')||'mic');
+  let stream;
+  if(src==='tone'){
+    try{ const p=await navigator.mediaDevices.getUserMedia({audio:true}); p.getTracks().forEach(t=>t.stop()); }catch(e){}
+    const ac=new (window.AudioContext||window.webkitAudioContext)();
+    if(ac.state==='suspended') await ac.resume();
+    const osc=ac.createOscillator();osc.type='sine';osc.frequency.value=440;
+    const g=ac.createGain();g.gain.value=0.9;const dest=ac.createMediaStreamDestination();
+    osc.connect(g);g.connect(dest);osc.start();
+    stream=dest.stream;
+    L('sending CONSTANT 440Hz tone over WebRTC...');
+  }else{
+    // Real microphone. Keep the browser's echo cancellation / noise suppression ON so the TouchPad
+    // speaker output doesn't feed back into the laptop mic when they are in the same room.
+    // Raw-ish capture: noiseSuppression OFF (it was crushing the quiet analog-input signal to
+    // near-silence) + autoGainControl ON to boost a weak mic. echoCancellation OFF for max level
+    // (safe here: near-silent so far -> no feedback risk). ?ns=1 restores noise suppression.
+    const ns=(Q.get('ns')==='1');
+    const wantVideo=(Q.get('video')==='1');
+    // Audio from the mic (best-effort). Meter proves capture; micRMS jumps when you talk.
+    let audioTracks=[];
+    try{
+      const a=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:ns,noiseSuppression:ns,autoGainControl:true}});
+      audioTracks=a.getAudioTracks();
+      const mac=new (window.AudioContext||window.webkitAudioContext)();
+      if(mac.state==='suspended') await mac.resume();
+      const an=mac.createAnalyser();an.fftSize=512;mac.createMediaStreamSource(a).connect(an);window._micAn=an;
+    }catch(e){L('mic unavailable ('+e.name+') - sending video only');}
+    // Video: this desktop has NO webcam, so synthesize a moving picture on a <canvas> and captureStream
+    // it -> a real encoded VP8/H.264 track over WebRTC, no camera needed. Animated + frame counter so
+    // it's unmistakable on the TouchPad.
+    let videoTracks=[];
+    if(wantVideo){
+      const cv=document.createElement('canvas');cv.width=320;cv.height=240;const ctx=cv.getContext('2d');
+      let fr=0;(function draw(){fr++;
+        ctx.fillStyle='#003366';ctx.fillRect(0,0,320,240);
+        const x=160+120*Math.sin(fr/15),y=120+80*Math.cos(fr/11);
+        ctx.fillStyle='#33ff66';ctx.beginPath();ctx.arc(x,y,28,0,7);ctx.fill();
+        ctx.fillStyle='#fff';ctx.font='22px monospace';ctx.fillText('ATLAS '+fr,10,30);
+        requestAnimationFrame(draw);})();
+      videoTracks=cv.captureStream(15).getVideoTracks();
+      L('CANVAS video (no webcam) + '+audioTracks.length+' audio -> sending A/V');
+    }else L('MIC only, raw='+(!ns)+' - TALK into the laptop');
+    stream=new MediaStream([...videoTracks,...audioTracks]);
+  }
+  stream.getTracks().forEach(t=>pc.addTrack(t,stream));   // all tracks (audio + video if requested)
+  const off=await pc.createOffer();await pc.setLocalDescription(off);
+  await iceDone(pc);
+  await post('offer',JSON.stringify({type:pc.localDescription.type,sdp:filterSdp(pc.localDescription.sdp)}));
+  L('offer sent (LAN candidate only), waiting for answer...');
+  const ans=await poll('answer');
+  await pc.setRemoteDescription(JSON.parse(ans));
+  L('answer set. connecting...');
+  setInterval(async()=>{let ps=0;(await pc.getStats()).forEach(r=>{if(r.type==='outbound-rtp')ps=r.packetsSent;});
+    let lvl='';if(window._micAn){const b=new Uint8Array(window._micAn.fftSize);window._micAn.getByteTimeDomainData(b);let s=0;for(const v of b){const d=(v-128)/128;s+=d*d;}lvl=' micRMS='+Math.sqrt(s/b.length).toFixed(3);}
+    L('ice='+pc.iceConnectionState+' packetsSent='+ps+lvl);},1500);
+}
+
+async function callee(){
+  const pc=new RTCPeerConnection(cfg);
+  let mediaEl=null;
+  pc.ontrack=(e)=>{L('ONTRACK '+e.track.kind);
+    const stream=e.streams[0];
+    // One <video> element renders the whole stream: it shows the video track AND plays the audio
+    // track through the same MediaPlayer path we fixed (qspk sink). Works for audio-only too (no
+    // picture). /tmp/atlas_autoplay lets unmuted autoplay through; keep a tap button as fallback.
+    if(!mediaEl){
+      mediaEl=document.createElement('video');
+      mediaEl.autoplay=true;mediaEl.controls=true;mediaEl.playsInline=true;
+      mediaEl.style.cssText='width:96%;background:#000;display:block;margin:6px';
+      document.body.appendChild(mediaEl);
+      const b=document.createElement('button');b.textContent='TAP TO PLAY';
+      b.style.cssText='font-size:28px;padding:24px;margin:12px;background:#3d3;display:block;width:90%';
+      b.onclick=()=>{L('tap -> play');mediaEl.play().then(()=>L('PLAYING (tap)')).catch(x=>L('play err '+x.name+': '+x.message));};
+      document.body.appendChild(b);
+    }
+    mediaEl.srcObject=stream;   // (re)bind as tracks arrive
+    mediaEl.play().then(()=>L('AUTOPLAY started ('+stream.getVideoTracks().length+'v/'+stream.getAudioTracks().length+'a)')).catch(x=>L('autoplay blocked '+x.name+' - tap'));
+  };
+  L('waiting for offer...');
+  const off=await poll('offer');
+  await pc.setRemoteDescription(JSON.parse(off));
+  const ans=await pc.createAnswer();await pc.setLocalDescription(ans);
+  await iceDone(pc);
+  await post('answer',JSON.stringify(pc.localDescription));
+  L('answer sent. receiving...');
+  setInterval(async()=>{let pr=0;(await pc.getStats()).forEach(r=>{if(r.type==='inbound-rtp')pr=r.packetsReceived;});
+    L('ice='+pc.iceConnectionState+' packetsReceived='+pr);},1500);
+}
+document.getElementById('go').onclick=()=>{document.getElementById('go').disabled=true;
+  (ROLE==='caller'?caller():callee()).catch(e=>L('ERR '+e));};
+// callee can auto-start (no gesture needed for receive); caller needs a click to allow AudioContext
+if(ROLE==='callee'){document.getElementById('go').click();}
+</script></body>
