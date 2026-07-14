@@ -187,7 +187,21 @@ enyo.kind({
 			window.__atlasInAppOpenAt = 0;
 			return true;
 		} else {
-			enyo.windows.openWindow("index.html", null, params);
+			// Normal relaunch (launcher tap, or a luna-send carrying a target). When an Atlas card already
+			// exists, openWindow("index.html") just brings it forward WITHOUT re-running rendered(), so the
+			// new target is silently dropped and the stale (often white) card is shown. Make the launch
+			// target authoritative: navigate the existing card directly. Only open a fresh window when
+			// there is genuinely no card to reuse.
+			var relTarget = params.target || params.url;
+			var app = (c && c.enyo && c.enyo.$) ? c.enyo.$.browserApp : null;
+			if (relTarget && app && app.setUrl && !this.isAtlasHome(relTarget)) {
+				app._launchSimple = (params.mode === "simple");
+				app._oauthRedirectPrefix = params.oauthRedirectPrefix || "";
+				app._oauthResultKey = params.oauthResultKey || "x_teams_oauth_result";
+				app.setUrl(relTarget);
+			} else {
+				enyo.windows.openWindow("index.html", null, params);
+			}
 			return true;
 		}
 	},
