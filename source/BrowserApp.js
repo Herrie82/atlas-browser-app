@@ -186,6 +186,18 @@ enyo.kind({
 			// check a timestamp stamped on the shared root window by atlasOpenCard().
 			window.__atlasInAppOpenAt = 0;
 			return true;
+		} else if (window.atlasOpenCard &&
+				(params.mode === "simple" ||
+				 (params.target && params.target.indexOf("atlas-simple:") === 0) ||
+				 (params.target && params.target.indexOf("atlas-private:") === 0))) {
+			// Simple / private cards (memory-heavy SPAs like web.whatsapp.com, OAuth popups, private
+			// browsing) must be BORN in that mode: the viewport (vs tall MODE-1) render buffer and the
+			// BS session are fixed at card creation, so navigating a reused MODE-1 card to a simple target
+			// does nothing (the tall buffer stays, page lays out 12000px+ into a 3072px buffer -> "loads
+			// halfway"). Route through the proven new-card path so rendered() runs with mode set from the
+			// start. The byproduct relaunch openWindow fires is swallowed by the _atlasInApp check above.
+			window.atlasOpenCard(params);
+			return true;
 		} else {
 			// Normal relaunch (launcher tap, or a luna-send carrying a target). When an Atlas card already
 			// exists, openWindow("index.html") just brings it forward WITHOUT re-running rendered(), so the
