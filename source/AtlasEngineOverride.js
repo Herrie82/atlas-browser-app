@@ -77,6 +77,16 @@
                         }
                     } catch (e2) { if (enyo.log) { enyo.log("[Atlas] saveLogin dispatch err " + e2); } }
                 }
+                if (dataType === "oauthRedirect") {
+                    // Engine intercepted a native-scheme OAuth redirect (msauth...://auth?code=...) that
+                    // WPE can't load — hand it to BrowserApp.checkOAuthRedirect (matches the launch
+                    // oauthRedirectPrefix, writes the result pref, closes the card). findBrowser walks the
+                    // owner chain up to BrowserApp, which owns checkOAuthRedirect.
+                    try {
+                        var bo = findBrowser(this, "checkOAuthRedirect");
+                        if (bo && data) { bo.checkOAuthRedirect(data); }
+                    } catch (eo) { if (enyo.log) { enyo.log("[Atlas] oauthRedirect dispatch err " + eo); } }
+                }
                 if (dataType === "copiedText") {
                     // Engine ferried the current web-content selection -> put it on the system clipboard.
                     try {

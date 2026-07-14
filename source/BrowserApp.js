@@ -37,6 +37,10 @@ enyo.kind({
 		{name: "setSearchPreferenceService", kind: enyo.PalmService, service: "palm://com.palm.universalsearch/", method: "setSearchPreference"},
 		{name: "clearOptionalSearchListService", kind: enyo.PalmService, service: "palm://com.palm.universalsearch/", method: "clearOptionalSearchList"},
 		{name: "stService", kind: "PalmService", service: "palm://com.palm.stservice/", timeout: 500},
+		// Teams OAuth redirect-capture channel: when this card is launched by the Teams account
+		// validator (mode=simple + oauthRedirectPrefix), the captured redirect URL is handed back
+		// through a systemservice preference the validator subscribes to. No custom db8 kind needed.
+		{name: "sysPrefsService", kind: "PalmService", service: "palm://com.palm.systemservice/", method: "setPreferences"},
 		{name: "launchApplicationService", kind: "PalmService", service: enyo.palmServices.application, method: "open", onFailure: "gotResourceError"},
 		{name: "addToLauncherService", kind: "PalmService", service: enyo.palmServices.application, method: "addLaunchPoint"},
 		{name: "resourceInfoService", kind: "PalmService", service: enyo.palmServices.application, method: "getResourceInfo", onSuccess: "gotResourceInfo", onFailure: "gotResourceError"},
@@ -228,7 +232,12 @@ enyo.kind({
 		// (OAuth2 popups, app SPAs like web.whatsapp.com). Stash it here; browserShown() sets it on the browser
 		// widget right before the load (where $.browser definitely exists). Omitted -> default scroll mode.
 		this._launchSimple = (p.mode === "simple");
-		enyo.log("[Atlas] launch mode=" + p.mode + " simple=" + this._launchSimple + " target=" + (p.target || p.url || ""));
+		// Teams OAuth redirect-capture: the validator passes the redirect_uri prefix to watch for.
+		// When a navigation lands on it, we hand the full URL (carrying ?code=...) back to the
+		// validator via a systemservice pref, then close this card. Key is overridable per-request.
+		this._oauthRedirectPrefix = p.oauthRedirectPrefix || "";
+		this._oauthResultKey = p.oauthResultKey || "x_teams_oauth_result";
+		enyo.log("[Atlas] launch mode=" + p.mode + " simple=" + this._launchSimple + " target=" + (p.target || p.url || "") + " oauthPrefix=" + this._oauthRedirectPrefix);
 		var url = p.target || p.url;
 		// #25 DIRECT-RENDER TEST (fb1/alpha hole): when the target URL carries the "atlasfs" marker,
 		// request webOS card fullscreen -> CardWindow::fullScreenEnabled(true) -> allowDirectRendering
@@ -527,8 +536,27 @@ enyo.kind({
 	pageTitleChanged: function(inSender, inTitle, inUrl) {
 		this.url = inUrl;
 		this.title = inTitle;
+		this.checkOAuthRedirect(inUrl);
+	},
+	// Teams OAuth redirect-capture. Every navigation is checked against the redirect_uri prefix the
+	// validator asked us to watch. On a match we already have the authorization code in the query
+	// (login.microsoftonline.com/.../nativeclient?code=...); hand the whole URL back and close.
+	checkOAuthRedirect: function(inUrl) {
+		if (this._oauthCaptured || !this._oauthRedirectPrefix || !inUrl) { return; }
+		if (inUrl.indexOf(this._oauthRedirectPrefix) !== 0) { return; }
+		this._oauthCaptured = true;
+		enyo.log("[Atlas] OAuth redirect captured -> " + inUrl.substring(0, 80) + "...");
+		var prefs = {};
+		prefs[this._oauthResultKey] = inUrl;
+		try { this.$.sysPrefsService.call(prefs); } catch (e) { enyo.log("[Atlas] OAuth pref write err " + e); }
+		enyo.log("[Atlas] OAuth pref written; result handed to validator");
+		// Best-effort self-dismiss. A WPE-hosted card can't reliably close itself (window.close()
+		// is a no-op and applicationManager/close ignores the calling process), so the launching
+		// Teams validator does the authoritative close by processId once it reads the result pref.
+		try { window.close(); } catch (e) {}
 	},
 	pageLoadStopped: function(inSender, inUrl) {
+		this.checkOAuthRedirect(inUrl || this.url);   // redirect page may carry no title -> catch it here too
 		this.updateHistory(this.title, this.url);
 	},
 	handleResource: function(inSender, inMimeType, inUrl) {
