@@ -237,6 +237,22 @@ enyo.kind({
 		// validator via a systemservice pref, then close this card. Key is overridable per-request.
 		this._oauthRedirectPrefix = p.oauthRedirectPrefix || "";
 		this._oauthResultKey = p.oauthResultKey || "x_teams_oauth_result";
+		// CARD-CLOSE WEBPROCESS REAP: swiping the card away does NOT run ~BrowserAdapter on our custom-mime
+		// (application/x-atlas-browser) WebView plugin, so ~YapClient never closes the yap socket ->
+		// BrowserServer never gets the disconnect (G_IO_HUP) -> the BrowserPage + its WPEWebProcess (tens-to-
+		// hundreds of MB; web.whatsapp.com ~340MB) LEAK forever, starving the device until new pages load
+		// WHITE. Disconnect the engine explicitly on window unload so BS deletes the page and terminates the
+		// WebProcess. (disconnectBrowserServer -> adapter asyncCmdDisconnect -> BrowserServer::clientDisconnected.)
+		if (!this._reapHooked) {
+			this._reapHooked = true;
+			var self = this;
+			var reapWebProcess = function() {
+				try { if (self.$.browser && self.$.browser.viewCall) self.$.browser.viewCall("disconnectBrowserServer"); } catch (e) {}
+				try { if (self.$.reader && self.$.reader.viewCall) self.$.reader.viewCall("disconnectBrowserServer"); } catch (e2) {}
+			};
+			window.addEventListener("pagehide", reapWebProcess, false);
+			window.addEventListener("unload", reapWebProcess, false);
+		}
 		enyo.log("[Atlas] launch mode=" + p.mode + " simple=" + this._launchSimple + " target=" + (p.target || p.url || "") + " oauthPrefix=" + this._oauthRedirectPrefix);
 		var url = p.target || p.url;
 		// #25 DIRECT-RENDER TEST (fb1/alpha hole): when the target URL carries the "atlasfs" marker,
