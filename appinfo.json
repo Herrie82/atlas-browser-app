@@ -1,6 +1,6 @@
 {
 	"id": "org.webosports.app.atlas",
-	"version": "0.9.0",
+	"version": "0.9.5",
 	"vendor": "WebOS Ports",
 	"type": "web",
 	"main": "index.html",
