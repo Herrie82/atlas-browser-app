@@ -15,6 +15,11 @@ A focused follow-up to 0.9.5: next-gen image support plus a leaner, faster-start
   reboot → full plugin rescan on the first browse) to cryptofs, so it's built once and survives
   reboots.
 
+## 🔐 TLS
+- **OpenSSL 3.5 LTS** — the network crypto stack was upgraded from 3.0.16 to **3.5.7** (same `.so.3`
+  ABI). Supported through 2030 vs 2026 for the 3.0 line. HTTPS and WebRTC (DTLS) both verified
+  on-device after the swap.
+
 ## 🔧 MIME handler cleanup
 - Atlas registers as an opener for **images, audio, video, and `file:` / `ftp:` links**, but no
   longer registers `http:` / `https:` or `text/html` — it won't compete with the stock browser for
