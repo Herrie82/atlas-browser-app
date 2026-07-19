@@ -25,6 +25,8 @@
 { "mime": "image/jpeg", "extension": "jpeg" },
 { "mime": "image/gif", "extension": "gif" },
 { "mime": "image/webp", "extension": "webp" },
+{ "mime": "image/avif", "extension": "avif" },
+{ "mime": "image/jxl", "extension": "jxl" },
 { "mime": "image/bmp", "extension": "bmp" },
 { "mime": "image/svg+xml", "extension": "svg" },
 { "mime": "image/x-icon", "extension": "ico" },
