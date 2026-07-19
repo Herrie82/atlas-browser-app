@@ -12,11 +12,8 @@
 	"uiRevision": 2,
 	"tapToShareSupported":true,
 	"mimeTypes": [
-{ "urlPattern": "^https?:" },
 { "urlPattern": "^ftp:" },
 { "urlPattern": "^file:" },
-{ "mime": "text/html", "extension": "html" },
-{ "mime": "text/html", "extension": "htm" },
 { "mime": "application/xhtml+xml", "extension": "xhtml" },
 { "mime": "application/xml", "extension": "xml" },
 { "mime": "text/plain", "extension": "txt" },
