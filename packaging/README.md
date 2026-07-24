@@ -8,14 +8,37 @@ Install with **Preware** or **WebOS Quick Install** — they run `postinst`/`pre
 
 ## Build
 
-    bash packaging/build-ipk.sh   # (from ~/webos/wpe — it references the host build outputs)
+`build-ipk.sh` finds **this repo** from its own location (no editing needed), and takes the large ARM
+build artifacts — the engine, `BrowserServer`, and adapter — from two sibling projects via a few
+environment variables. It runs a **preflight** that names any missing artifact and where to get it.
+
+    packaging/build-ipk.sh                                    # uses the defaults below
+    WPE=~/webos/wpe ADAPTER_SO=~/build/BrowserAdapterAtlas.so packaging/build-ipk.sh
+
+| Variable     | Default                        | What it points at | Source repo |
+|--------------|--------------------------------|-------------------|-------------|
+| `WPE`        | `$HOME/webos/wpe`              | build-environment root: `deploy-252-jitfix/`, `browserserver-wpe/`, `ipk-build/pull/` | [atlas-wpe-env](https://github.com/Herrie82/atlas-wpe-env) |
+| `ADAPTER_SO` | `/tmp/BrowserAdapterAtlas.so`  | the compiled NPAPI adapter plugin | [atlas-wpe-backend](https://github.com/Herrie82/atlas-wpe-backend) |
+| `STRIP`      | autodetected on `PATH`         | cross-`strip` for the `BrowserServer` binary (optional — skipped if absent) | your ARM toolchain |
+| `IPK_BUILD_DIR` | `$WPE/ipk-build`            | scratch + output directory | — |
+
+The `postinst` / `prerm` control scripts are **vendored in this directory** (`ipk-postinst.sh`,
+`ipk-prerm.sh`), so the package is self-contained; the build falls back to `$WPE/ipk-*.sh` only if the
+vendored copies are removed. Keep them in sync with [atlas-wpe-env](https://github.com/Herrie82/atlas-wpe-env)
+when the on-device install flow changes.
 
 Produces `org.webosports.app.atlas_<version>_all.ipk` (~56 MB). `build-ipk.sh` assembles:
 
 - the app (this repo) under `usr/palm/applications/org.webosports.app.atlas/`
 - a bundled `deviceroot/` holding the **stripped** engine (`deploy-252-jitfix` set), the
-  `BrowserServer-atlas` binary, the boot wrapper, the `atlas` upstart job, and the adapter plugin
+  `BrowserServer-atlas` binary, the boot wrapper, the `atlas` + `atlas-sensord` upstart jobs, the
+  LunaService role file, and the adapter plugin
 - `control` + `postinst` + `prerm`
+
+> Only the **app front-end** in this repo can be packaged with the webOS SDK alone
+> (`palm-package <appdir>`), which is handy for validating app changes. A **complete, installable**
+> browser ipk additionally needs the engine/BrowserServer/adapter artifacts from the two sibling repos
+> above — the preflight will tell you exactly which ones are missing.
 
 ## What is intentionally NOT bundled (dependencies on the device)
 

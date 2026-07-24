@@ -20,7 +20,8 @@ modern web-platform support, on the original hardware (Adreno 220, Cortex-A8, ke
 | Component | Repo / path | Role |
 |-----------|-------------|------|
 | Enyo UI app | `atlas-browser-app` (this repo) | cards, toaster drawer, dialogs, start page |
-| WPE backend | `atlas-wpe-backend` | `libWPEBackend-atlas.so` + `BrowserPageWPE.cpp` (compiled into the BrowserServer) |
+| WPE backend | [`atlas-wpe-backend`](https://github.com/Herrie82/atlas-wpe-backend) | `libWPEBackend-atlas.so` + `BrowserPageWPE.cpp` (compiled into the BrowserServer) |
+| Build env | [`atlas-wpe-env`](https://github.com/Herrie82/atlas-wpe-env) | cross-build scripts, engine deploy set, device-pulled bits, install scripts |
 | BrowserServer | `doctor305/BrowserServer` | yap-IPC server hosting the WPE engine |
 | BrowserAdapter | `BrowserAdapter` (LunaCE plugin) | paints the engine's offscreen buffer into the card |
 
@@ -116,6 +117,13 @@ start-page reorder** are committed and verified on-device. A **static + dynamic 
 
 ## Build & deploy (developer notes)
 
+- **This repo (the app):** it is a plain Enyo 1 / webOS app — no compile step. Validate a change by
+  packaging just the front-end with the webOS SDK: `palm-package <path-to-this-repo>`. For a **complete,
+  installable** browser ipk (app + engine + BrowserServer + adapter), use `packaging/build-ipk.sh`; it
+  derives this repo from its own location and takes the ARM build artifacts from
+  [`atlas-wpe-env`](https://github.com/Herrie82/atlas-wpe-env) /
+  [`atlas-wpe-backend`](https://github.com/Herrie82/atlas-wpe-backend) via `WPE=` / `ADAPTER_SO=` (its
+  preflight lists anything missing). See `packaging/README.md`.
 - **Engine build:** WPE WebKit under cron (`cron-jit-build.sh`, `ninja -j16`, ~40 min) to survive
   session teardown; capped `-j` (unified sources ~2.5 GB each).
 - **Deploy:** `deploy-252.sh` — `patchelf` interp/rpath on the process stubs + binary string-patch of
