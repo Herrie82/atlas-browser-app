@@ -1,5 +1,6 @@
 resources/
-.DS_Storeearth_icons_final(8)/
+.DS_Store
+earth_icons_final(8)/
 
 # build artifacts
 *.ipk
