@@ -267,7 +267,20 @@ enyo.kind({
 		}
 		this.$.view.setUrl(loadUrl);
 		this.$.actionbar.setLoading(true);
+		// Show the resolving slice IMMEDIATELY. Between hitting go and the engine's first progress
+		// report there is a real pause — the URL is still being completed and resolved (typing
+		// "www.example.com" walks through http:// then https://), which on this hardware can take a
+		// couple of seconds. setLoading alone only makes the bar VISIBLE; it sits at 0 and looks
+		// stuck. Parking it at RESOLVE_PROGRESS says "something is happening" straight away.
+		this.showResolvingProgress();
 		this.$.actionbar.setUrl(this.url);
+	},
+	//* Bottom slice of the progress bar, reserved for URL completion/resolution before the engine
+	//* reports anything. Real load progress is scaled into the remainder (see loadProgress).
+	RESOLVE_PROGRESS: 5,
+	showResolvingProgress: function() {
+		this._lastProgress = this.RESOLVE_PROGRESS;
+		this.$.actionbar.setProgress(this.RESOLVE_PROGRESS);
 	},
 	searchPreferencesChanged: function() {
 		this.$.actionbar.setSearchPreferences(this.searchPreferences);
@@ -943,11 +956,19 @@ enyo.kind({
 	   }
 	   this.isErrorLoadFailed = false;
 	   this.$.actionbar.setLoading(true);
+	   // Also covers loads we did not start ourselves (tapping a link), which otherwise show the same
+	   // motionless bar until the engine's first report.
+	   this.showResolvingProgress();
 	},
 	loadProgress: function(inSender, inProgress) {
-		if (this._lastProgress < inProgress) {
-			this.$.actionbar.setProgress(inProgress);
-			this._lastProgress = inProgress;
+		// Scale the engine's 0-100 into the slice above RESOLVE_PROGRESS, so the bar continues from
+		// where the resolving slice left it instead of snapping backwards to a low real percentage.
+		// Thresholds below stay on the RAW value — they are about load state, not bar position.
+		var scaled = this.RESOLVE_PROGRESS +
+			Math.round(inProgress * (100 - this.RESOLVE_PROGRESS) / 100);
+		if (this._lastProgress < scaled) {
+			this.$.actionbar.setProgress(scaled);
+			this._lastProgress = scaled;
 
 			if (inProgress === 100) {
 				this._timeoutHandle = setTimeout(enyo.hitch(this, "clearProgress"), 1000);
