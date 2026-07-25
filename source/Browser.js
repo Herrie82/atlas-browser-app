@@ -65,7 +65,8 @@ enyo.kind({
 			onOpenBookmarks: "doOpenBookmarks",
 			onNewCard: "openNewCard",
 			onHistorySelected: "setHistoryUrl",
-			onTranslate: "actionbarTranslate"
+			onTranslate: "actionbarTranslate",
+			onAddressFocused: "addressBarFocused"
 		},
 		{name: "findDialog", kind: "FindBar", showing: false, onFind: "find", onGoToPrevious: "goToPrevious", onGoToNext: "goToNext"},
 		{name: "view", kind: "WebView", flex: 1, height: "100%",
@@ -272,7 +273,10 @@ enyo.kind({
 		// "www.example.com" walks through http:// then https://), which on this hardware can take a
 		// couple of seconds. setLoading alone only makes the bar VISIBLE; it sits at 0 and looks
 		// stuck. Parking it at RESOLVE_PROGRESS says "something is happening" straight away.
-		this._navigating = false;   // user asked for a new page: restart the bar even mid-load
+		// A real navigation always wins over an in-flight warm-up: drop the suppression first so this
+		// load drives the bar normally, and restart the bar even if a load is already running.
+		this._warming = false;
+		this._navigating = false;
 		this.beginProgress();
 		this.$.actionbar.setUrl(this.url);
 	},
@@ -288,10 +292,31 @@ enyo.kind({
 	 * navigation restarts it; redirects keep climbing from where they were.
 	 */
 	beginProgress: function() {
-		if (this._navigating) { return; }
+		if (this._warming || this._navigating) { return; }
 		this._navigating = true;
 		this._lastProgress = this.RESOLVE_PROGRESS;
 		this.$.actionbar.setProgress(this.RESOLVE_PROGRESS);
+	},
+	/**
+	 * Warm the engine when the user reaches for the address bar.
+	 *
+	 * Opening to the start page loads nothing, so BrowserServer has no page, no WPEWebProcess and no
+	 * initialised EGL/GL context; the first navigation pays for all of it before the real page starts
+	 * fetching. Loading a throwaway about:blank first moves that cost off the critical path.
+	 *
+	 * The trigger matters. A timer does NOT work here: this card's JS does not run while it is
+	 * unfocused, so an enyo.job scheduled at launch does not fire until the user interacts - which is
+	 * exactly when they are navigating, and the warm-up then clobbers their load (observed: the real
+	 * URL restarted after about:blank finished). Address-bar focus is the first interaction, and the
+	 * user then spends seconds typing, which is ample for about:blank.
+	 *
+	 * Skipped once a page is loaded - the engine is already warm by then.
+	 */
+	addressBarFocused: function() {
+		if (this._warmedUp || this.url || !window.PalmSystem) { return; }
+		this._warmedUp = true;
+		this._warming = true;
+		this.viewCall("setUrl", ["about:blank"]);
 	},
 	searchPreferencesChanged: function() {
 		this.$.actionbar.setSearchPreferences(this.searchPreferences);
@@ -300,6 +325,7 @@ enyo.kind({
 		this.$.actionbar.setDefaultSearch(this.defaultSearch);
 	},
 	pageTitleChanged: function(inSender, inTitle, inUrl, inBack, inForward) {
+		if (this._warming) { return; }   // about:blank warm-up: no address bar, title or history
 		this.log(inUrl, inTitle, inBack, inForward);
 		this.url = inUrl;
 		this.title = inTitle || $L("Untitled");
@@ -960,6 +986,7 @@ enyo.kind({
 		this.$.actionbar.setProgress(0);
 	},
 	loadStarted: function() {
+	   if (this._warming) { return; }   // warm-up about:blank: no loading UI
 	   this.hideSelectionUI();
 	   if (this._timeoutHandle != null) {
 		   clearTimeout(this._timeoutHandle);
@@ -972,6 +999,10 @@ enyo.kind({
 	   this.beginProgress();
 	},
 	loadProgress: function(inSender, inProgress) {
+		if (this._warming) {                    // warm-up about:blank: no bar movement, no history
+			if (inProgress === 100) { this._warming = false; }
+			return;
+		}
 		// Scale the engine's 0-100 into the slice above RESOLVE_PROGRESS, so the bar continues from
 		// where the resolving slice left it instead of snapping backwards to a low real percentage.
 		// Thresholds below stay on the RAW value — they are about load state, not bar position.

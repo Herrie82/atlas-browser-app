@@ -49,7 +49,9 @@ enyo.kind({
 		onOpenBookmarks: "",
 		onNewCard: "",
 		onHistorySelected: "",
-		onTranslate: ""
+		onTranslate: "",
+		// Bubbled so Browser can warm the engine the moment the user reaches for the address bar.
+		onAddressFocused: ""
 	},
 	components: [
     	{kind: "Control", showing: false, name: "title", className: "page-title enyo-text-ellipsis", content: "Untitled"},
@@ -74,6 +76,7 @@ enyo.kind({
 	],
 	//* @public
 	hideButtons: function() {
+		this.doAddressFocused();
 		if ( enyo.getWindowOrientation() == "up" || enyo.getWindowOrientation() == "down") {
 			this.$.back.hide();
 			this.$.forward.hide();
