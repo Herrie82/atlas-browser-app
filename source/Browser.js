@@ -272,13 +272,24 @@ enyo.kind({
 		// "www.example.com" walks through http:// then https://), which on this hardware can take a
 		// couple of seconds. setLoading alone only makes the bar VISIBLE; it sits at 0 and looks
 		// stuck. Parking it at RESOLVE_PROGRESS says "something is happening" straight away.
-		this.showResolvingProgress();
+		this._navigating = false;   // user asked for a new page: restart the bar even mid-load
+		this.beginProgress();
 		this.$.actionbar.setUrl(this.url);
 	},
 	//* Bottom slice of the progress bar, reserved for URL completion/resolution before the engine
 	//* reports anything. Real load progress is scaled into the remainder (see loadProgress).
 	RESOLVE_PROGRESS: 5,
-	showResolvingProgress: function() {
+	/**
+	 * Start the progress bar for a NEW navigation, parked at the resolving slice.
+	 *
+	 * Guarded by _navigating because a single navigation fires loadStarted repeatedly - typing
+	 * "example.com" redirects www -> http -> https, and each hop starts a load. Without the guard the
+	 * bar slides backwards to 5% on every hop (observed: 5, 15, 5, 10, 15...). Only an actual new
+	 * navigation restarts it; redirects keep climbing from where they were.
+	 */
+	beginProgress: function() {
+		if (this._navigating) { return; }
+		this._navigating = true;
 		this._lastProgress = this.RESOLVE_PROGRESS;
 		this.$.actionbar.setProgress(this.RESOLVE_PROGRESS);
 	},
@@ -945,20 +956,20 @@ enyo.kind({
 	stopClick: function() {
 		this.log();
 		this.$.view.callBrowserAdapter("stopLoad");
+		this._navigating = false;
 		this.$.actionbar.setProgress(0);
 	},
 	loadStarted: function() {
 	   this.hideSelectionUI();
-	   this._lastProgress = 0;
 	   if (this._timeoutHandle != null) {
 		   clearTimeout(this._timeoutHandle);
 		   this._timeoutHandle = null;
 	   }
 	   this.isErrorLoadFailed = false;
 	   this.$.actionbar.setLoading(true);
-	   // Also covers loads we did not start ourselves (tapping a link), which otherwise show the same
-	   // motionless bar until the engine's first report.
-	   this.showResolvingProgress();
+	   // Covers loads we did not start ourselves (tapping a link). No-op for the redirect hops of a
+	   // navigation already in flight, so the bar never slides backwards.
+	   this.beginProgress();
 	},
 	loadProgress: function(inSender, inProgress) {
 		// Scale the engine's 0-100 into the slice above RESOLVE_PROGRESS, so the bar continues from
@@ -991,6 +1002,7 @@ enyo.kind({
 		if (this._lastProgress <= 50) this.isQuickRedirect = true;
 	},
 	clearProgress: function() {
+		this._navigating = false;   // next loadStarted is a genuinely new navigation
 		this.$.actionbar.setProgress(0);
 		this.$.actionbar.setLoading(false);
 		this._timeoutHandle = null;
