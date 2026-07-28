@@ -56,23 +56,18 @@
 	.actionbar-phone-hide {
 		display: none !important;
 	}
-	/* Make the address bar at least twice its normal height (54px -> 112px) so the URL field is a big,
-	   easy target. The back/forward buttons stay vertically centered (menu-container is align:center). */
+	/* Match the stock Mojo browser's address bar (its sweet spot for this device): a normal-height bar
+	   (~56px) with a readable URL field. Atlas's default height is already right — the real fix is the
+	   FIELD FONT: the actual <input> element is .enyo-input-input (the .enyo-tool-input is its wrapper),
+	   so earlier font rules on the wrapper never applied. Stock uses height:50 / font-size:16 on the
+	   input; 18px here for a touch more legibility. */
 	.actionbar.enyo-toolbar {
-		height: 112px;
+		height: 56px;
 	}
-	.actionbar .menu-container {
-		padding: 6px 8px 0;
-	}
-	/* Grow the address field itself to fill the taller bar with comfortable text. */
-	.actionbar .enyo-tool-input {
-		font-size: 20px;
-	}
-	.actionbar .enyo-tool-input input,
-	.actionbar .enyo-tool-input .enyo-input,
-	.actionbar .enyo-input {
-		height: 88px;
-		line-height: 88px;
-		font-size: 20px;
+	.actionbar .enyo-tool-input .enyo-input-input,
+	.actionbar .enyo-input-input {
+		font-size: 18px;
+		line-height: 22px;
+		height: 44px;
 	}
 }
