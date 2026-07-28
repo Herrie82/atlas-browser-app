@@ -48,4 +48,23 @@
 		min-width: 0;
 		max-width: 100%;
 	}
+
+	/* --- Phone address bar: pare it down to a big URL field like the stock Mojo browser. --- */
+	/* Hide the share / new-card / bookmarks icons here — all still reachable from the app menu &
+	   toaster. With them gone, the flex:1 address input expands to fill the bar. Back/forward and the
+	   keyboard toggle stay. */
+	.actionbar-phone-hide {
+		display: none !important;
+	}
+	/* Give the bar (and so the URL field) a bit more height + breathing room for easier tapping. */
+	.actionbar.enyo-toolbar {
+		height: 60px;
+	}
+	.actionbar .menu-container {
+		padding: 3px 6px 0;
+	}
+	/* Make the address field itself read as the prominent element: full width, comfortable text. */
+	.actionbar .enyo-tool-input {
+		font-size: 17px;
+	}
 }
