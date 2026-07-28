@@ -16,6 +16,7 @@ enyo.depends(
 	"source/AtlasEngineOverride.js",
 	"$enyo-lib/printdialog/",
 	"css/browser.css",
+	"css/phone.css",
 	"source/ActionBar.js",
 	"source/URLSearch.js",
 	"source/AddressInput.js",

@@ -1,0 +1,51 @@
+/*  Copyright 2012 Hewlett-Packard Development Company, L.P.
+ *  Licensed under the Apache License, Version 2.0.
+ *
+ *  Phone / small-screen layout overrides (HP Pre 3, Veer — 480x800 and narrower).
+ *  Loaded after browser.css so these win. Scoped to a max-width media query so the TouchPad
+ *  (1024x768) is completely unaffected; the rules only apply on a phone-width viewport.
+ *
+ *  The reference layout is the stock webOS phone browser (com.palm.app.browser, 480px wide).
+ *  This file only corrects the handful of TouchPad-fixed widths that overflow a phone; most of
+ *  the app already uses %/max-width and adapts on its own. Fine layout polish is expected to be
+ *  iterated on-device.
+ */
+
+@media all and (max-width: 640px) {
+
+	/* Never let the card scroll sideways — a fixed-px child that overflows would otherwise let the
+	   whole UI pan horizontally on a phone. */
+	html, body {
+		max-width: 100%;
+		overflow-x: hidden;
+	}
+
+	/* Page title in the action bar is a TouchPad-fixed 620px; center it in whatever width we have. */
+	.page-title {
+		width: auto;
+		max-width: 100%;
+	}
+
+	/* Start-page bookmark grid: 5-across is cramped on 480px. Go 3-across with bigger touch targets. */
+	.startpage-tile {
+		width: 31.3%;
+		margin: 1%;
+	}
+	.startpage-tile-thumb {
+		width: 72px;
+		height: 72px;
+	}
+
+	/* Reader view: shrink the desktop-sized margins/type so an article fits a phone column. */
+	.reader-content {
+		max-width: 100%;
+		padding: 18px 18px 48px 18px;
+		font-size: 19px;
+	}
+
+	/* Login / autofill pickers were sized for a tablet popover; keep them inside the screen. */
+	.login-picker {
+		min-width: 0;
+		max-width: 100%;
+	}
+}

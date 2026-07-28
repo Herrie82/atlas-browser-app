@@ -6,6 +6,34 @@
     // Per-card-context static debounce store — stable across the tap+click pair even if
     // enyo.windows.getRootWindow() resolves differently (or null) between them.
     var _atlasDebounce = {};
+
+    // LOW-MEMORY DEVICE AUTODETECT (HP Pre 3 / phones: 512 MB RAM, single-core).
+    // Small-screen webOS devices can't afford the tall pan-scroll render buffer or several live
+    // WebProcesses, so the app is born in "atlas-simple" mode there by default: every card renders
+    // viewport-only (mult=1) instead of the multi-screen-tall buffer. This runs synchronously at
+    // load (before any db8 pref is read) so the very FIRST card on a phone is already low-memory.
+    // The Preferences "Low-memory mode" toggle can override the effective value once prefs load;
+    // __atlasLowMemAuto keeps the immutable hardware verdict for the default.
+    (function computeLowMem() {
+        var low = false;
+        try {
+            if (window.PalmSystem && PalmSystem.deviceInfo) {
+                var di = (window.enyo && enyo.json && enyo.json.parse)
+                    ? enyo.json.parse(PalmSystem.deviceInfo) : JSON.parse(PalmSystem.deviceInfo);
+                var w = parseInt(di.screenWidth, 10) || 0, h = parseInt(di.screenHeight, 10) || 0;
+                var minDim = (w && h) ? Math.min(w, h) : 0;
+                var model = (di.modelName || "").toLowerCase();
+                // Min viewport dimension: Pre 3 = 480, Veer/Pixi = 320, TouchPad = 768. A <=640 cut
+                // cleanly separates phones from the TouchPad.
+                if (minDim && minDim <= 640) { low = true; }
+                // Belt-and-suspenders on model name if screen metrics are missing.
+                if (/pre ?3|pre ?2|\bpre\b|veer|pixi/.test(model)) { low = true; }
+            }
+        } catch (e) {}
+        window.__atlasLowMemAuto = low;
+        if (typeof window.__atlasLowMem === "undefined") { window.__atlasLowMem = low; }
+        if (window.enyo && enyo.log) { enyo.log("[Atlas] lowMemory autodetect=" + low); }
+    })();
     // Open a new browser card exactly once. On LunaCE an in-app openWindow ALSO fires
     // applicationRelaunch (whose else-branch would open a duplicate card); the {_atlasInApp}
     // param doesn't reliably survive into the root window's relaunch windowParams, so we ALSO

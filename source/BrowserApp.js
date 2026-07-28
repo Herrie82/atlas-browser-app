@@ -211,7 +211,7 @@ enyo.kind({
 			var relTarget = params.target || params.url;
 			var app = (c && c.enyo && c.enyo.$) ? c.enyo.$.browserApp : null;
 			if (relTarget && app && app.setUrl && !this.isAtlasHome(relTarget)) {
-				app._launchSimple = (params.mode === "simple");
+				app._launchSimple = (params.mode === "simple") || this.isLowMemory();
 				app._oauthRedirectPrefix = params.oauthRedirectPrefix || "";
 				app._oauthResultKey = params.oauthResultKey || "x_teams_oauth_result";
 				app.setUrl(relTarget);
@@ -231,7 +231,9 @@ enyo.kind({
 		// MODE 2 (viewport / low-memory): optional launch param mode=simple for cards that don't page-scroll
 		// (OAuth2 popups, app SPAs like web.whatsapp.com). Stash it here; browserShown() sets it on the browser
 		// widget right before the load (where $.browser definitely exists). Omitted -> default scroll mode.
-		this._launchSimple = (p.mode === "simple");
+		// On a low-memory device (HP Pre 3 / phones, see AtlasEngineOverride autodetect) EVERY card is born
+		// simple so we never allocate the multi-screen-tall pan buffer.
+		this._launchSimple = (p.mode === "simple") || this.isLowMemory();
 		// Teams OAuth redirect-capture: the validator passes the redirect_uri prefix to watch for.
 		// When a navigation lands on it, we hand the full URL (carrying ?code=...) back to the
 		// validator via a systemservice pref, then close this card. Key is overridable per-request.
@@ -394,6 +396,19 @@ enyo.kind({
 		// which opened two private cards. Arm once per menu-open; the handler disarms after the first fire.
 		this._menuArmed = true;
 	},
+	// Effective low-memory mode. Seeded synchronously at load from the hardware autodetect
+	// (AtlasEngineOverride sets window.__atlasLowMem); the "Low-memory mode" preference can override
+	// it once db8 prefs load (see setLowMemoryMode). Cards read this at birth to decide simpleMode.
+	isLowMemory: function() {
+		return !!window.__atlasLowMem;
+	},
+	// Preference handler for the "Low-memory mode" toggle. Newly opened cards read window.__atlasLowMem
+	// at birth; an existing card keeps the render buffer it was created with (fixed at creation), so a
+	// change takes effect on the next card / navigation.
+	setLowMemoryMode: function(inValue) {
+		window.__atlasLowMem = !!inValue;
+		this.log("lowMemoryMode=" + window.__atlasLowMem);
+	},
 	applyPreference: function(inPreference, inValue) {
 		this.log(inPreference, inValue);
 		var preferenceMap = {
@@ -402,9 +417,10 @@ enyo.kind({
 			acceptCookies: "setAcceptCookies",
 			offerTranslate: "setOfferTranslate",
 			autoplayWithSound: "setAutoplayWithSound",
+			lowMemoryMode: "setLowMemoryMode",
 		}
 		this.$.pane.viewByName("browser");
-		var o = inPreference == "clearHistory" || inPreference == "clearBookmarks" ? this : this.$.browser;
+		var o = inPreference == "clearHistory" || inPreference == "clearBookmarks" || inPreference == "lowMemoryMode" ? this : this.$.browser;
 		this.log(preferenceMap[inPreference] || inPreference);
 		this.log(o);
 		this.log(o[preferenceMap[inPreference] || inPreference]);
@@ -457,7 +473,11 @@ enyo.kind({
 			{_kind: kind, key: "enableJavascript", value: true},
 			{_kind: kind, key: "autoplayWithSound", value: false},
 			{_kind: kind, key: "rememberPasswords", value: true},
-			{_kind: kind, key: "offerTranslate", value: false}
+			{_kind: kind, key: "offerTranslate", value: false},
+			// Default from the hardware autodetect: ON for phones / 512MB devices (Pre 3), OFF for the
+			// TouchPad. The Preferences toggle can override it. The migration branch below reuses this
+			// list, so an existing install that predates this pref gets the autodetect default too.
+			{_kind: kind, key: "lowMemoryMode", value: !!window.__atlasLowMemAuto}
 		];
 		if (inResponse.results.length == 0) {
 			this.$.browserPrefsService.call({objects: defaultBrowserPreferences}, {method: "put", onSuccess: "fetchPreferences"});

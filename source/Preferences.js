@@ -53,6 +53,11 @@ enyo.kind({
 						{kind: "ToggleButton", name: "autoplayWithSound", onChange: "togglePreferenceClick", preference: "autoplayWithSound", type: "Browser"}
 					]},
 				]},
+				{kind: "RowGroup", caption: $L("Performance"), style: "margin-bottom: 10px", components: [
+					{kind: "LabeledContainer", caption: $L("Low-memory mode"), components: [
+						{kind: "ToggleButton", name: "lowMemoryMode", onChange: "togglePreferenceClick", preference: "lowMemoryMode", type: "Browser"}
+					]}
+				]},
 				{kind: "Button", caption: $L("Clear Bookmarks"), onclick: "promptButtonClick", dialog: "clearBookmarksPrompt"},
 				{kind: "Button", caption: $L("Clear History"), onclick: "promptButtonClick", dialog: "clearHistoryPrompt"},
 				{kind: "Button", caption: $L("Clear Cookies"), onclick: "promptButtonClick", dialog: "clearCookiesPrompt"},

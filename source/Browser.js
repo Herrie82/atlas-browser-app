@@ -48,7 +48,7 @@ enyo.kind({
 		onTranslatePage: ""
 	},
 	components: [
-		{kind: "Control", style: "position:absolute; bottom:0px; left:0px; height:8px; width:1024px; background-color:none; z-index:120;"},
+		{kind: "Control", style: "position:absolute; bottom:0px; left:0px; height:8px; width:100%; background-color:none; z-index:120;"},
 		{name: "launchApplicationService", kind: enyo.PalmService, service: enyo.palmServices.application, method: "open"},
 		{name: "importWallpaperService", kind: enyo.PalmService, service: enyo.palmServices.system, method: "wallpaper/importWallpaper", onSuccess: "importedWallpaper", onFailure: "wallpaperError"},
 		{name: "setWallpaperService", kind: enyo.PalmService, service: enyo.palmServices.system, method: "setPreferences", onFailure: "wallpaperError"},
@@ -796,9 +796,20 @@ enyo.kind({
 		enyo.windows.addBannerMessage($L("Drag mode: touch and drag the item"), params);
 	},
 	newCardClick: function(inTapInfo) {
+		// Low-memory devices (Pre 3, 512MB) can't afford two live WebProcesses. Collapse "Open in New
+		// Card" to a navigation of THIS card so there is only ever one engine page alive.
+		if (window.__atlasLowMem && inTapInfo && inTapInfo.linkUrl) {
+			this.setUrl(inTapInfo.linkUrl);
+			return;
+		}
 		window.atlasOpenCard({url: inTapInfo.linkUrl});
 	},
 	openNewCard: function() {
+		// Low-memory: keep to a single card — return to the start page in this card instead of spawning one.
+		if (window.__atlasLowMem) {
+			this.doGoHome();
+			return;
+		}
 		window.atlasOpenCard({});
 	},
 	// --- page-level context menu actions (long-press on plain page/text, or when
