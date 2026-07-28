@@ -61,7 +61,7 @@ enyo.kind({
 			{kind: "ToolButton", name: "newcard", className: "actionbar-tool-button actionbar-phone-hide", icon: "images/chrome/menu-icon-newcard.png", onclick: "doNewCard"},
 			{kind: "ToolButton", name: "bookmarks", className: "actionbar-tool-button actionbar-phone-hide", icon: "images/chrome/menu-icon-bookmark.png", onclick: "doOpenBookmarks"},
 			{name: "translateButton", kind: "Image", className: "actionbar-tool-button atlas-translate-button", src: "images/translate-icon.png", showing: false, onclick: "doTranslateClick"},
-			{name: "kbButton", kind: "Image", className: "actionbar-tool-button atlas-kb-button", src: "images/icon-hide-keyboard.png", onclick: "changeKB"},
+			{name: "kbButton", kind: "Image", className: "actionbar-tool-button atlas-kb-button actionbar-phone-hide", src: "images/icon-hide-keyboard.png", onclick: "changeKB"},
 		]},
 		{name: "sharePopup", className: "launch-popup",  kind: "Menu", components: [
 			{caption: $L("Add Bookmark"), onclick: "doAddBookmark"},

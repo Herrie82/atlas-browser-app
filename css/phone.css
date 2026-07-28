@@ -56,15 +56,23 @@
 	.actionbar-phone-hide {
 		display: none !important;
 	}
-	/* Give the bar (and so the URL field) a bit more height + breathing room for easier tapping. */
+	/* Make the address bar at least twice its normal height (54px -> 112px) so the URL field is a big,
+	   easy target. The back/forward buttons stay vertically centered (menu-container is align:center). */
 	.actionbar.enyo-toolbar {
-		height: 60px;
+		height: 112px;
 	}
 	.actionbar .menu-container {
-		padding: 3px 6px 0;
+		padding: 6px 8px 0;
 	}
-	/* Make the address field itself read as the prominent element: full width, comfortable text. */
+	/* Grow the address field itself to fill the taller bar with comfortable text. */
 	.actionbar .enyo-tool-input {
-		font-size: 17px;
+		font-size: 20px;
+	}
+	.actionbar .enyo-tool-input input,
+	.actionbar .enyo-tool-input .enyo-input,
+	.actionbar .enyo-input {
+		height: 88px;
+		line-height: 88px;
+		font-size: 20px;
 	}
 }
