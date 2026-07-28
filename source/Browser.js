@@ -67,6 +67,15 @@ enyo.kind({
 			onHistorySelected: "setHistoryUrl",
 			onTranslate: "actionbarTranslate"
 		},
+		/* Phone bottom navigation overlay (Mojo-browser style): back/forward on the left, refresh on the
+		 * right, in thumb reach — so the top bar can be just the URL field. Hidden on the TouchPad (CSS);
+		 * shown only at phone width. Wired to the same handlers as the top ActionBar buttons. */
+		{name: "bottomNav", className: "atlas-bottom-nav", components: [
+			{kind: "ToolButton", name: "bnBack", className: "atlas-bottom-btn", icon: "images/chrome/menu-icon-back.png", onclick: "goBack"},
+			{kind: "ToolButton", name: "bnForward", className: "atlas-bottom-btn", icon: "images/chrome/menu-icon-forward.png", onclick: "goForward"},
+			{className: "atlas-bottom-spacer"},
+			{kind: "ToolButton", name: "bnRefresh", className: "atlas-bottom-btn", icon: "images/chrome/menu-icon-refresh.png", onclick: "reloadClick"}
+		]},
 		{name: "findDialog", kind: "FindBar", showing: false, onFind: "find", onGoToPrevious: "goToPrevious", onGoToNext: "goToNext"},
 		{name: "view", kind: "WebView", flex: 1, height: "100%",
 			onMousehold: "openContextMenu",

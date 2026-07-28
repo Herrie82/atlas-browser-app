@@ -208,6 +208,12 @@
 	padding: 0;
 }
 
+/* Phone bottom navigation overlay — hidden by default (the TouchPad keeps everything in the top action
+ * bar); phone.css shows + styles it at phone width. */
+.atlas-bottom-nav {
+	display: none;
+}
+
 /* The show/hide-keyboard icon is a native 50x44 sysmgr asset — scale it to ~half so it matches the
  * other ~32px address-bar icons (preserve the 50:44 aspect ratio). */
 .atlas-kb-button img,

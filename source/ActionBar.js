@@ -54,8 +54,8 @@ enyo.kind({
 	components: [
     	{kind: "Control", showing: false, name: "title", className: "page-title enyo-text-ellipsis", content: "Untitled"},
 		{kind: enyo.HFlexBox, className: "menu-container", align: "center", components: [
-			{kind: "ToolButton", name: "back", className: "actionbar-tool-button", icon: "images/chrome/menu-icon-back.png", onclick: "goBack", onmousehold: "openBackHistoryPopup"},
-			{kind: "ToolButton", name: "forward", className: "actionbar-tool-button", icon: "images/chrome/menu-icon-forward.png", onclick: "goForward", onmousehold: "openForwardHistoryPopup"},
+			{kind: "ToolButton", name: "back", className: "actionbar-tool-button actionbar-phone-hide", icon: "images/chrome/menu-icon-back.png", onclick: "goBack", onmousehold: "openBackHistoryPopup"},
+			{kind: "ToolButton", name: "forward", className: "actionbar-tool-button actionbar-phone-hide", icon: "images/chrome/menu-icon-forward.png", onclick: "goForward", onmousehold: "openForwardHistoryPopup"},
 			{kind: "ToolButton", name: "search", className: "actionbar-tool-button", flex: 1, kind: "URLSearch", onLoad: "doLoad", onStopLoad: "doStopLoad", onRefresh: "doRefresh", onAddressInputFocused: "hideButtons", onAddressInputBlurred: "showButtons", onAddBookmark: "doAddBookmark", onDeleteBookmark: "doDeleteBookmark"},
 			{kind: "ToolButton", name: "share", className: "actionbar-tool-button actionbar-phone-hide", icon: "images/chrome/menu-icon-share.png", onclick: "showSharePopup"},
 			{kind: "ToolButton", name: "newcard", className: "actionbar-tool-button actionbar-phone-hide", icon: "images/chrome/menu-icon-newcard.png", onclick: "doNewCard"},
