@@ -27,7 +27,16 @@ The `postinst` / `prerm` control scripts are **vendored in this directory** (`ip
 vendored copies are removed. Keep them in sync with [atlas-wpe-env](https://github.com/Herrie82/atlas-wpe-env)
 when the on-device install flow changes.
 
-Produces `org.webosports.app.atlas_<version>_all.ipk` (~56 MB). `build-ipk.sh` assembles:
+> **Which builder to use.** There are two. This one assembles the package from a *pre-built* engine
+> deploy set (`deploy-252-jitfix`). The releases actually shipped since 0.9.7 are built by
+> **[`atlas-wpe-env/build-ipk-atlas.sh`](https://github.com/Herrie82/atlas-wpe-env)** (see BUILDING.md
+> §7), which builds `BrowserServer-atlas` and the backend from source and overlays them onto a
+> reference deviceroot — that is what produced the ~99 MB `0.9.8` ipk. Use that one unless you
+> specifically have a `deploy-252-jitfix` tree to package. Note that 0.9.8's engine-hang recovery spans
+> this repo *and* BrowserServer *and* the boot wrapper, so an app-only package does not carry it.
+
+Produces `org.webosports.app.atlas_<version>_all.ipk` (~56 MB with the `deploy-252-jitfix` engine set;
+the from-source builder above yields ~99 MB, ~209 MB installed). `build-ipk.sh` assembles:
 
 - the app (this repo) under `usr/palm/applications/org.webosports.app.atlas/`
 - a bundled `deviceroot/` holding the **stripped** engine (`deploy-252-jitfix` set), the
