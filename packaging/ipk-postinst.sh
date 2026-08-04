@@ -14,10 +14,38 @@ log() { echo "atlas-postinst: $*"; }
 #    USB storage and must stay free of app internals. The boot wrapper derives its own $DR at runtime.
 log "preparing WPE engine (in place on cryptofs deviceroot)..."
 chmod 755 "$DR/wpe-252/BrowserServer-atlas" "$DR/atlas/BrowserServer" 2>/dev/null
-# GPU: the engine links versioned sonames; supply them from the device's real Adreno driver (not bundled).
-# cryptofs (like vfat) has no symlinks, so COPY the driver to the versioned names rather than symlink.
-cp -f /usr/lib/libEGL.so    "$DR/wpe-252/lib/libEGL.so.1"
-cp -f /usr/lib/libGLESv2.so "$DR/wpe-252/lib/libGLESv2.so.2"
+# GPU: stage the Adreno driver under every name the engine asks for. THREE names are needed, and a fresh
+# install that is missing any of them gets a browser that renders nothing:
+#   libEGL.so.1 / libGLESv2.so.2  - what libWPEBackend-atlas.so NEEDs (verified with readelf).
+#   libEGL.so (unversioned)       - what the vendor libGLESv2 blob itself NEEDs. Its SONAME is the
+#                                   unversioned "libEGL.so" too, so today this only resolves by luck:
+#                                   either the already-loaded libEGL.so.1 satisfies it under its SONAME,
+#                                   or the loader falls through to /usr/lib/libEGL.so. Stage it locally
+#                                   so neither piece of luck is required.
+# cryptofs (like vfat) has no symlinks, so COPY rather than symlink.
+#
+# Prefer the DEVICE's driver (it matches this device's GPU), but fall back to the copy bundled in the ipk
+# when /usr/lib has no unversioned name — the old unconditional `cp -f` failed silently in that case and
+# left the app dir with no GL at all, which is the 0.9.8 "missing libEGL.so.1 / libGLESv2.so.2" report.
+stage_gl() {   # stage_gl <device source> <destination>
+    if [ -f "$1" ]; then
+        cp -f "$1" "$2" || log "WARNING: could not copy $1 -> $2 (keeping whatever is there)"
+    elif [ -s "$2" ]; then
+        log "note: $1 absent on this device — keeping the bundled $(basename "$2")"
+    else
+        log "ERROR: no $1 and no bundled $(basename "$2") — the browser will not render"
+    fi
+}
+stage_gl /usr/lib/libEGL.so    "$DR/wpe-252/lib/libEGL.so.1"
+stage_gl /usr/lib/libGLESv2.so "$DR/wpe-252/lib/libGLESv2.so.2"
+# Unversioned alias, taken from what we just staged (NOT re-read from /usr/lib, so it is correct even on a
+# device that has no /usr/lib/libEGL.so).
+cp -f "$DR/wpe-252/lib/libEGL.so.1" "$DR/wpe-252/lib/libEGL.so" 2>/dev/null \
+    || log "WARNING: could not stage the unversioned libEGL.so"
+# Fail loud rather than leave the user with a browser that opens and renders nothing.
+for _gl in libEGL.so.1 libGLESv2.so.2 libEGL.so; do
+    [ -s "$DR/wpe-252/lib/$_gl" ] || log "ERROR: $_gl is MISSING from the engine lib dir — WebGL/rendering will fail"
+done
 # Bridge symlink: libWPEWebKit's baked install prefix is length-limited (can't hold the long cryptofs path),
 # so deploy prefix-patches it to the short /var/atlas252, which we point at the real engine dir on cryptofs.
 # (/var is ext3 → supports symlinks; cryptofs/vfat do not.) Removed once WebKit is rebuilt with the cryptofs
