@@ -49,6 +49,27 @@ the from-source builder above yields ~99 MB, ~209 MB installed). `build-ipk.sh` 
 > browser ipk additionally needs the engine/BrowserServer/adapter artifacts from the two sibling repos
 > above — the preflight will tell you exactly which ones are missing.
 
+## Distributing through a feed (Preware / WOSA Modernize)
+
+The package is built so a feed can ship it **without repacking `control.tar.gz`**. Two rules make that
+work, and breaking either forces a downstream re-pack:
+
+- **Nothing in `postinst`/`prerm` restarts LunaSysMgr.** It has to reload before the browser plugin is
+  visible, but batch installers run *under* LunaSysMgr, so an inline restart kills the installer and
+  abandons the rest of the dependency chain. The restart is declared instead, as
+  `PostInstallFlags` / `PostUpdateFlags` / `PostRemoveFlags` = `RestartLuna`, emitted in the ipk control's
+  `Source` block by `build-ipk-atlas.sh`. **Preware reads those from the feed's `Packages` index, not from
+  the ipk**, so a feed must copy them into its own stanza. For a hand install, re-run postinst with
+  `ATLAS_POSTINST_RESTART_LUNA=1` (or `ATLAS_PRERM_RESTART_LUNA=1` on removal), or just reboot.
+- **The GPU driver ships in the payload** under all three names the engine asks for
+  (`libEGL.so.1`, `libGLESv2.so.2`, and the unversioned `libEGL.so` the vendor GLESv2 blob NEEDs).
+  `build-ipk-atlas.sh` refuses to build without them; `postinst` prefers the device's own driver and
+  falls back to these.
+
+Deliberately **not** in our control, because they are specific to one feed: a `Depends:` on that feed's
+OpenSSL 1.1 package, and the display half of the `Source` block (`Feed`, `Category`, `Title`,
+`FullDescription`, `Icon`, `DeviceCompatibility`, `LastUpdated`).
+
 ## What is intentionally NOT bundled (dependencies on the device)
 
 - **OpenSSL 1.1** — depends on the community `/usr/lib/ssl11` package (the wrapper's `LD_LIBRARY_PATH`

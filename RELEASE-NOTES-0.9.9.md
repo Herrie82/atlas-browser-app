@@ -23,6 +23,19 @@ Three changes, all in the installer and the packaging:
 - **Says so when something is wrong.** Missing driver files are now reported in the install log instead
   of passing quietly, and the package build itself refuses to produce an ipk that lacks them.
 
+## 📦 Installing no longer interrupts itself
+
+Installing Atlas used to restart the webOS UI the instant Atlas itself finished — necessary, because
+LunaSysMgr has to reload before it can see the browser plugin, but done at the worst possible moment.
+
+Preware runs *under* LunaSysMgr, so that restart killed the installer in the middle of its run. Anyone
+installing Atlas as part of a chain (it is a dependency of the "default browser" package, which also
+pulls in the TLS updates) lost whatever was still queued behind it.
+
+Atlas now leaves the restart to the installer, which does it once after everything is installed. If you
+install by hand rather than through a package manager, restart Luna or reboot when it finishes — the
+installer log says so too.
+
 ## Requirements
 
 Unchanged from 0.9.8: community **OpenSSL 1.1** (`/usr/lib/ssl11`) and the device Adreno GL driver.

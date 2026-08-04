@@ -88,9 +88,25 @@ log "registering db8 kinds..."
 luna-send -n 1 palm://com.palm.configurator/run '{"types":["dbkinds"]}'       2>/dev/null
 luna-send -n 1 palm://com.palm.configurator/run '{"types":["dbpermissions"]}' 2>/dev/null
 
-# 6. start the engine + reload LunaSysMgr (picks up the new NPAPI plugin for application/x-atlas-browser).
-log "starting atlas engine + reloading LunaSysMgr..."
+# 6. start the engine. Do NOT restart LunaSysMgr from in here.
+# LunaSysMgr does have to reload to pick up the new NPAPI plugin (application/x-atlas-browser) — but
+# Preware and other batch installers run UNDER LunaSysMgr, so killing it mid-batch kills the installer
+# and aborts every remaining package in the dependency chain. Observed in the WOSA Modernize feed: Atlas
+# is a dependency of atlas-default-browser, which also pulls tls-updates; the restart fired the moment
+# Atlas finished installing and the rest of the chain never ran.
+#
+# The reload is the INSTALLER's job — once, after the whole batch. Preware takes it from the
+# PostInstallFlags / PostUpdateFlags / PostRemoveFlags = RestartLuna metadata; we emit those in the ipk
+# control, and a feed additionally needs them in its Packages index "Source" block, which is what Preware
+# actually reads. Installing by hand instead? Re-run with ATLAS_POSTINST_RESTART_LUNA=1, or just restart
+# Luna / reboot yourself afterwards.
+log "starting atlas engine..."
 start atlas 2>/dev/null
-killall LunaSysMgr 2>/dev/null
+if [ "${ATLAS_POSTINST_RESTART_LUNA:-0}" = 1 ]; then
+    log "ATLAS_POSTINST_RESTART_LUNA=1 — restarting LunaSysMgr now"
+    killall LunaSysMgr 2>/dev/null
+else
+    log "NOTE: LunaSysMgr must reload before the browser can render — restart Luna or reboot to finish."
+fi
 log "install complete."
 exit 0

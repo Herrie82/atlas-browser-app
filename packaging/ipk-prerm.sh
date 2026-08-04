@@ -26,6 +26,15 @@ log "removing our db8 kind files..."
 rm -f /etc/palm/db/kinds/org.webosports.logins       /etc/palm/db/kinds/org.webosports.autofill
 rm -f /etc/palm/db/permissions/org.webosports.logins /etc/palm/db/permissions/org.webosports.autofill
 
-killall LunaSysMgr 2>/dev/null
+# No `killall LunaSysMgr` here either — same reason as postinst: a removal can be one step of a batch
+# (Preware dependency chain), and restarting Luna mid-batch takes the installer down with it. Removal is
+# declared PostRemoveFlags=RestartLuna so the installer does it once, at the end. Set
+# ATLAS_PRERM_RESTART_LUNA=1 when removing by hand and you want the plugin unloaded immediately.
+if [ "${ATLAS_PRERM_RESTART_LUNA:-0}" = 1 ]; then
+    log "ATLAS_PRERM_RESTART_LUNA=1 — restarting LunaSysMgr now"
+    killall LunaSysMgr 2>/dev/null
+else
+    log "NOTE: restart Luna or reboot to finish unloading the browser plugin."
+fi
 log "removal complete."
 exit 0
