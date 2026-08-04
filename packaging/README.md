@@ -49,26 +49,37 @@ the from-source builder above yields ~99 MB, ~209 MB installed). `build-ipk.sh` 
 > browser ipk additionally needs the engine/BrowserServer/adapter artifacts from the two sibling repos
 > above — the preflight will tell you exactly which ones are missing.
 
-## Distributing through a feed (Preware / WOSA Modernize)
+## Two distribution targets
 
-The package is built so a feed can ship it **without repacking `control.tar.gz`**. Two rules make that
-work, and breaking either forces a downstream re-pack:
+The same engine payload is packaged two ways, because a package manager and a hand install need opposite
+behaviour. Build whichever you are shipping (both live in [atlas-wpe-env](https://github.com/Herrie82/atlas-wpe-env)):
 
-- **Nothing in `postinst`/`prerm` restarts LunaSysMgr.** It has to reload before the browser plugin is
-  visible, but batch installers run *under* LunaSysMgr, so an inline restart kills the installer and
-  abandons the rest of the dependency chain. The restart is declared instead, as
-  `PostInstallFlags` / `PostUpdateFlags` / `PostRemoveFlags` = `RestartLuna`, emitted in the ipk control's
-  `Source` block by `build-ipk-atlas.sh`. **Preware reads those from the feed's `Packages` index, not from
-  the ipk**, so a feed must copy them into its own stanza. For a hand install, re-run postinst with
-  `ATLAS_POSTINST_RESTART_LUNA=1` (or `ATLAS_PRERM_RESTART_LUNA=1` on removal), or just reboot.
-- **The GPU driver ships in the payload** under all three names the engine asks for
-  (`libEGL.so.1`, `libGLESv2.so.2`, and the unversioned `libEGL.so` the vendor GLESv2 blob NEEDs).
-  `build-ipk-atlas.sh` refuses to build without them; `postinst` prefers the device's own driver and
-  falls back to these.
+    ./build-ipk-feed.sh         # -> $OUT/feed/org.webosports.app.atlas_<ver>_all.ipk
+    ./build-ipk-standalone.sh   # -> $OUT/standalone/...   (ATLAS_PKG_TARGET=feed|standalone)
 
-Deliberately **not** in our control, because they are specific to one feed: a `Depends:` on that feed's
-OpenSSL 1.1 package, and the display half of the `Source` block (`Feed`, `Category`, `Title`,
-`FullDescription`, `Icon`, `DeviceCompatibility`, `LastUpdated`).
+|                              | `feed` (Preware / WOSA Modernize) | `standalone` (WOQI, direct download, by hand) |
+|------------------------------|-----------------------------------|-----------------------------------------------|
+| `postinst`/`prerm` restart Luna | **no** — a batch installer runs *under* LunaSysMgr, so an inline restart kills it and abandons the rest of the dependency chain | **yes** — there is no installer to defer to, and the plugin is invisible until Luna reloads |
+| Restart declared as metadata | `PostInstallFlags`/`PostUpdateFlags`/`PostRemoveFlags` = `RestartLuna` | — |
+| `Depends:`                   | the feed's OpenSSL 1.1 package (`FEED_DEPENDS`, default `org.webosarchive.tls-updates`) — Atlas needs `/usr/lib/ssl11` for HTTPS | none — nothing would resolve it |
+
+`data.tar.gz` is **byte-identical between the two targets** (verified); only `control.tar.gz` differs, so
+a feed can index these bits without repacking. Payload mtimes are stamped from the app repo's HEAD commit
+(`SOURCE_DATE_EPOCH` overrides), so rebuilding the same commit reproduces the same payload md5 instead of
+churning it — but the stamp still moves release to release, which GStreamer needs in order to invalidate
+its cached plugin registry.
+
+**Preware reads the restart flags from the feed's `Packages` index, not from the ipk control**, so a feed
+must copy them into its own stanza; ours is there to be self-describing and to copy from. The display half
+of `Source` (`Feed`, `Category`, `Title`, `FullDescription`, `Icon`, `DeviceCompatibility`, `LastUpdated`)
+stays out of the ipk deliberately — that is per-feed catalog metadata.
+
+Either target can be forced to restart Luna at install/remove time with `ATLAS_POSTINST_RESTART_LUNA=1` /
+`ATLAS_PRERM_RESTART_LUNA=1`.
+
+Both targets ship **the GPU driver under all three names the engine asks for** (`libEGL.so.1`,
+`libGLESv2.so.2`, and the unversioned `libEGL.so` the vendor GLESv2 blob NEEDs). The build refuses to
+produce an ipk without them; `postinst` prefers the device's own driver and falls back to these.
 
 ## What is intentionally NOT bundled (dependencies on the device)
 

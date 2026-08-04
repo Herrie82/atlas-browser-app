@@ -6,6 +6,13 @@ APP=/media/cryptofs/apps/usr/palm/applications/org.webosports.app.atlas
 DR=$APP/deviceroot
 log() { echo "atlas-postinst: $*"; }
 
+# Packaging target — REWRITTEN AT BUILD TIME by build-ipk-atlas.sh (ATLAS_PKG_TARGET). Keep the literal
+# assignment on one line; the builder rewrites it with sed.
+#   standalone : we restart LunaSysMgr ourselves at the end (WOQI / by-hand installs, no installer to do it)
+#   feed       : we must NOT — Preware runs under LunaSysMgr and a mid-batch restart kills the installer;
+#                the feed declares PostInstallFlags=RestartLuna so it happens once, after the batch
+PKG_TARGET=standalone
+
 # 0. prerequisite: community OpenSSL 1.1 lives in /usr/lib/ssl11 (NOT bundled — we depend on it for TLS 1.3).
 [ -e /usr/lib/ssl11/libssl.so.1.1 ] || log "WARNING: /usr/lib/ssl11/libssl.so.1.1 missing — install the webOS OpenSSL 1.1 package first or HTTPS will not work."
 
@@ -88,25 +95,27 @@ log "registering db8 kinds..."
 luna-send -n 1 palm://com.palm.configurator/run '{"types":["dbkinds"]}'       2>/dev/null
 luna-send -n 1 palm://com.palm.configurator/run '{"types":["dbpermissions"]}' 2>/dev/null
 
-# 6. start the engine. Do NOT restart LunaSysMgr from in here.
-# LunaSysMgr does have to reload to pick up the new NPAPI plugin (application/x-atlas-browser) — but
-# Preware and other batch installers run UNDER LunaSysMgr, so killing it mid-batch kills the installer
-# and aborts every remaining package in the dependency chain. Observed in the WOSA Modernize feed: Atlas
-# is a dependency of atlas-default-browser, which also pulls tls-updates; the restart fired the moment
-# Atlas finished installing and the rest of the chain never ran.
+# 6. start the engine, then reload LunaSysMgr so it picks up the new NPAPI plugin
+# (application/x-atlas-browser) — but only when we are the ones who should do it.
 #
-# The reload is the INSTALLER's job — once, after the whole batch. Preware takes it from the
-# PostInstallFlags / PostUpdateFlags / PostRemoveFlags = RestartLuna metadata; we emit those in the ipk
-# control, and a feed additionally needs them in its Packages index "Source" block, which is what Preware
-# actually reads. Installing by hand instead? Re-run with ATLAS_POSTINST_RESTART_LUNA=1, or just restart
-# Luna / reboot yourself afterwards.
+# In a FEED build we must not: Preware and other batch installers run UNDER LunaSysMgr, so restarting it
+# mid-batch kills the installer and abandons the rest of the dependency chain. Observed in the WOSA
+# Modernize feed — Atlas is a dependency of atlas-default-browser, which also pulls tls-updates, and the
+# restart fired the moment Atlas finished, so the rest never ran. There the feed declares
+# PostInstallFlags=RestartLuna and the installer does it once, after the whole batch.
+#
+# In a STANDALONE build there is no installer to defer to (WOQI, or extracting by hand), so we do it here
+# or the user is left with a browser that cannot render until they work out that Luna needs restarting.
+#
+# ATLAS_POSTINST_RESTART_LUNA=1 forces the restart regardless of target.
 log "starting atlas engine..."
 start atlas 2>/dev/null
-if [ "${ATLAS_POSTINST_RESTART_LUNA:-0}" = 1 ]; then
-    log "ATLAS_POSTINST_RESTART_LUNA=1 — restarting LunaSysMgr now"
+if [ "${ATLAS_POSTINST_RESTART_LUNA:-0}" = 1 ] || [ "$PKG_TARGET" = standalone ]; then
+    log "reloading LunaSysMgr (target=$PKG_TARGET) so it picks up the browser plugin..."
     killall LunaSysMgr 2>/dev/null
 else
-    log "NOTE: LunaSysMgr must reload before the browser can render — restart Luna or reboot to finish."
+    log "NOTE: LunaSysMgr must reload before the browser can render — your installer should do this"
+    log "      (PostInstallFlags=RestartLuna); otherwise restart Luna or reboot to finish."
 fi
 log "install complete."
 exit 0

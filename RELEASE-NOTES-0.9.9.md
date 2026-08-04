@@ -32,9 +32,10 @@ Preware runs *under* LunaSysMgr, so that restart killed the installer in the mid
 installing Atlas as part of a chain (it is a dependency of the "default browser" package, which also
 pulls in the TLS updates) lost whatever was still queued behind it.
 
-Atlas now leaves the restart to the installer, which does it once after everything is installed. If you
-install by hand rather than through a package manager, restart Luna or reboot when it finishes — the
-installer log says so too.
+Atlas is now packaged two ways. The build for feeds leaves the restart to the package manager, which
+does it once after everything is installed; the standalone build (WebOS Quick Install, direct download)
+still restarts the UI itself, because there is no installer to hand the job to. Either way you no longer
+get an installer killed halfway through.
 
 ## Requirements
 
