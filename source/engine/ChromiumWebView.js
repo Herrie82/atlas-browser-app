@@ -83,7 +83,9 @@ enyo.kind({
             this.error("[Atlas] no browser_shell PageView available");
             return;
         }
-        var params = { partition: this.getPartition() };
+        // browser_shell_ipc gives the PAGE a ShellIpc constructor, which is how injected script talks
+        // back to us (see installInputBridge).
+        var params = { partition: this.getPartition(), api: ["v8/browser_shell_ipc"] };
         this.pageView = new window.PageView({ "page-contents-params": params });
         shellWin.pageView.addChildView(this.pageView);
         this.pageContents = this.pageView.pageContents;
@@ -98,6 +100,8 @@ enyo.kind({
     },
     teardownPageView: function () {
         if (!this.pageView) { return; }
+        try { if (this._ipc && this._ipc.removeAllEventListeners) { this._ipc.removeAllEventListeners(); } } catch (e1) {}
+        this._ipc = null;
         try {
             var shellWin = window.shell && window.shell.shellWindow;
             if (shellWin) { shellWin.pageView.removeChildView(this.pageView); }
@@ -140,6 +144,7 @@ enyo.kind({
         var r = this.node.getBoundingClientRect();
         if (r.width <= 0 || r.height <= 0) { return; }
         var key = [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)].join(",");
+        this._rect = { left: Math.round(r.left), top: Math.round(r.top) };   // for page -> app coords
         if (key === this._bounds) { return; }         // nothing moved — don't churn the compositor
         this._bounds = key;
         try {
@@ -190,6 +195,7 @@ enyo.kind({
         var pc = this.pageContents, self = this;
         function on(name, fn) { try { pc.on(name, fn); } catch (e) {} }
 
+        on("dom-ready", function () { self.installInputBridge(); });
         on("did-start-loading", function () {
             self.loading = true;
             self.doLoadStarted();
@@ -299,6 +305,70 @@ enyo.kind({
     currentUrl: function () {
         try { return (this.pageContents && this.pageContents.url) || this.url || ""; } catch (e) { return this.url || ""; }
     },
+    // ---------------------------------------------------------------------------------------------
+    // input bridge: taps and scrolling inside the page
+    // ---------------------------------------------------------------------------------------------
+    /* browser_shell reports nothing about what happens INSIDE a page — no tap, no scroll — but Atlas
+     * needs both (a tap dismisses the selection UI; the scroll offset positions it). The page is a
+     * separate process, so the only channel is script injected into it talking back over ShellIpc on a
+     * per-view channel. Re-injected on every dom-ready, since a navigation wipes the page context; the
+     * guard flag makes a double injection harmless. */
+    ipcChannel: function () {
+        if (!this._ipcChannel) {
+            this._ipcChannel = "atlas_input_" + (this.id || this.name || "view").replace(/[^A-Za-z0-9_]/g, "_");
+        }
+        return this._ipcChannel;
+    },
+    installInputBridge: function () {
+        if (!this.pageContents) { return; }
+        this.openInputChannel();
+        var js = "(function(){" +
+            "  if (window.__atlasInputBridge) { return; }" +
+            "  if (typeof ShellIpc === 'undefined') { return; }" +
+            "  window.__atlasInputBridge = 1;" +
+            "  var ipc = new ShellIpc(" + JSON.stringify(this.ipcChannel()) + ");" +
+            "  document.addEventListener('click', function (e) {" +
+            "    var n = e.target, link = '', img = '';" +
+            "    while (n && n !== document) { if (n.tagName === 'A' && n.href) { link = n.href; break; } n = n.parentNode; }" +
+            "    if (e.target && e.target.tagName === 'IMG') { img = e.target.src || ''; }" +
+            "    ipc.post('tap', { x: e.clientX, y: e.clientY, link: link, img: img });" +
+            "  }, true);" +
+            "  var pending = false;" +
+            "  var report = function () {" +
+            "    pending = false;" +
+            "    ipc.post('scroll', { x: window.pageXOffset || 0, y: window.pageYOffset || 0 });" +
+            "  };" +
+            "  window.addEventListener('scroll', function () {" +
+            "    if (pending) { return; }" +          /* coalesce to one report per frame */
+            "    pending = true;" +
+            "    (window.requestAnimationFrame || window.setTimeout)(report, 16);" +
+            "  }, true);" +
+            "})();";
+        this.runScript(js);
+    },
+    openInputChannel: function () {
+        if (this._ipc || typeof window.ShellIpc === "undefined") { return; }
+        var self = this;
+        try {
+            this._ipc = new window.ShellIpc(this.ipcChannel());
+            this._ipc.on("tap", function (msg) { self.onPageTap(msg || {}); });
+            this._ipc.on("scroll", function (msg) { self.onPageScroll(msg || {}); });
+        } catch (e) {
+            enyo.log("[Atlas] input bridge unavailable: " + e);
+        }
+    },
+    /* Page coordinates are relative to the page view; Atlas works in app-window coordinates, so shift
+     * by where the view currently sits. */
+    onPageTap: function (msg) {
+        var r = this._rect || { left: 0, top: 0 };
+        var position = { left: r.left + (msg.x || 0), top: r.top + (msg.y || 0) };
+        var tapInfo = { linkUrl: msg.link || "", imageUrl: msg.img || "" };
+        this.doSingleTap(position, null, tapInfo);
+    },
+    onPageScroll: function (msg) {
+        this.doScrolledTo(msg.x || 0, msg.y || 0);
+    },
+
     /* Schemes the engine itself cannot render — these are the ones Atlas should hand to the system
      * (mailto:, tel:, an app's custom OAuth redirect...). Everything web-ish stays in the tab. */
     isExternalScheme: function (u) {
