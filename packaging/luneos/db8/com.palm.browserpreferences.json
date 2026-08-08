@@ -1,0 +1,7 @@
+{
+    "id": "com.palm.browserpreferences:1",
+    "owner": "org.webosports.app.atlas",
+    "indexes": [
+        { "name": "key", "props": [ { "name": "key" } ] }
+    ]
+}

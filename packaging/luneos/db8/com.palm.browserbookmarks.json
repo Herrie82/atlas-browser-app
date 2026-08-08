@@ -1,0 +1,10 @@
+{
+    "id": "com.palm.browserbookmarks:1",
+    "owner": "org.webosports.app.atlas",
+    "indexes": [
+        { "name": "url",        "props": [ { "name": "url" } ] },
+        { "name": "idx",        "props": [ { "name": "idx" } ] },
+        { "name": "title",      "props": [ { "name": "title" } ] },
+        { "name": "searchText", "props": [ { "name": "searchText", "collate": "primary", "tokenize": "all" } ] }
+    ]
+}

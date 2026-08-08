@@ -1,0 +1,8 @@
+{
+    "id": "org.webosports.logins:1",
+    "owner": "org.webosports.app.atlas",
+    "indexes": [
+        { "name": "host", "props": [ { "name": "host" } ] },
+        { "name": "user", "props": [ { "name": "u" } ] }
+    ]
+}

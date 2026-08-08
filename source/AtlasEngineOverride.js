@@ -13,6 +13,14 @@
     window.atlasOpenCard = function (params) {
         var p = params || {};
         p._atlasInApp = 1;
+        // On the Chromium shell there is only ONE window (shell.createWindow returns nothing usable),
+        // so a "card" is an in-app tab. The tab layer owns __atlasOpenTab; until it exists, say so
+        // rather than calling enyo.windows.openWindow, which would open nothing.
+        if (window.__atlasChromium) {
+            if (typeof window.__atlasOpenTab === "function") { window.__atlasOpenTab(p); }
+            else if (window.enyo && enyo.log) { enyo.log("[Atlas] openCard ignored: no tab layer on the chromium host"); }
+            return;
+        }
         // Debounce: LunaCE delivers a button/menu tap as BOTH a tap and a click, firing the open twice
         // within a few ms -> two cards. Swallow a second call inside 700ms. The debounce state lives on a
         // stable object: prefer the shared root window, but FALL BACK to a module-static (window may resolve
@@ -110,6 +118,9 @@
         }
         return false;
     }
+    // The NPAPI mime swap only means anything on the WPE host — on the Chromium shell the WebView kind
+    // is replaced wholesale by the PageView adapter, and stamping a plugin mime would break it.
+    if (window.__atlasChromium) { return; }
     if (!patch() && window.enyo && enyo.dispatcher) {
         // BasicWebView not ready yet — retry shortly
         var t = setInterval(function () { if (patch()) { clearInterval(t); } }, 50);
