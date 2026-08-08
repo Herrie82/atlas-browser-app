@@ -143,6 +143,27 @@ enyo.kind({
             if (this.showing) { this.syncBounds(); }
         }
     },
+    /* Foreground/background a whole tab (see TabLayer.js). Hiding alone would leave the page live and
+     * costing memory, so a backgrounded view also suspends its DOM and media. */
+    setEngineActive: function (active) {
+        var pc = this.pageContents;
+        try {
+            if (this.pageView) { this.pageView.setVisible(!!active); }
+            if (!pc) { return; }
+            if (active) {
+                pc.resumeDOM(); pc.resumeMedia(); pc.activate();
+                var shellWin = window.shell && window.shell.shellWindow;
+                if (shellWin && this.pageView) { shellWin.pageView.bringToFront(this.pageView); }
+                this._bounds = "";              // force a re-push; layout may have moved while hidden
+                this.syncBounds();
+                // Deliberately NOT calling pc.setFocus() here: the native view takes keyboard focus away
+                // from the UI page, which makes Atlas's address bar impossible to type in. Chromium
+                // focuses the page itself when the user taps it.
+            } else {
+                pc.suspendMedia(); pc.suspendDOM(); pc.deactivate();
+            }
+        } catch (e) {}
+    },
 
     // ---------------------------------------------------------------------------------------------
     // engine events -> Atlas events
@@ -181,7 +202,12 @@ enyo.kind({
             var u = self.currentUrl();
             if (u && u !== self.url) {
                 self.url = u;
-                self.doUrlRedirected(u);
+                // NOT doUrlRedirected: BrowserApp maps that event to openResource, which asks the
+                // system to open the URL in the default handler. On WPE it only fires for a scheme the
+                // engine cannot load; firing it per navigation makes every page load launch the
+                // platform's default browser (enactbrowser) alongside us. Atlas learns the new URL
+                // from pageTitleChanged, which carries it.
+                if (self.isExternalScheme(u)) { self.doUrlRedirected(u); }
             }
             self.pushTitle();
         });
@@ -237,6 +263,15 @@ enyo.kind({
     },
     currentUrl: function () {
         try { return (this.pageContents && this.pageContents.url) || this.url || ""; } catch (e) { return this.url || ""; }
+    },
+    /* Schemes the engine itself cannot render — these are the ones Atlas should hand to the system
+     * (mailto:, tel:, an app's custom OAuth redirect...). Everything web-ish stays in the tab. */
+    isExternalScheme: function (u) {
+        var m = /^([a-z][a-z0-9+.-]*):/i.exec(String(u || ""));
+        if (!m) { return false; }
+        var s = m[1].toLowerCase();
+        return !(s === "http" || s === "https" || s === "file" || s === "about" ||
+                 s === "data" || s === "blob" || s === "chrome" || s === "ftp");
     },
     readString: function (v) {
         if (typeof v === "string") { return v; }
