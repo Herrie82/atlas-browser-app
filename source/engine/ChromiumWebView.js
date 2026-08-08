@@ -70,7 +70,7 @@ enyo.kind({
     rendered: function () {
         this.inherited(arguments);
         if (!this.pageView) { this.createPageView(); }
-        this.syncBounds();
+        this.scheduleBoundsSync();
     },
     destroy: function () {
         this.teardownPageView();
@@ -89,7 +89,7 @@ enyo.kind({
         this.pageContents = this.pageView.pageContents;
         this.wireEvents();
         this.pageView.setVisible(true);
-        this.syncBounds();
+        this.scheduleBoundsSync();
         if (this.pendingUrl) {
             var u = this.pendingUrl;
             this.pendingUrl = null;
@@ -117,6 +117,24 @@ enyo.kind({
     // ---------------------------------------------------------------------------------------------
     // geometry: keep the native view exactly over our placeholder div
     // ---------------------------------------------------------------------------------------------
+    /* A view that has never been given bounds is drawn by the shell at full window size — which means
+     * it covers Atlas's own toolbar. The placeholder usually measures 0x0 for a beat after the view is
+     * created or re-shown (enyo lays out on the next frames), so a single sync attempt can silently do
+     * nothing and leave the page over the chrome. Retry over a few frames and stop at the first
+     * measurement that sticks. */
+    scheduleBoundsSync: function () {
+        var self = this, delays = [0, 40, 120, 300, 700], i = 0;
+        var tick = function () {
+            if (self.destroyed || !self.pageView) { return; }
+            self.syncBounds();
+            // Deliberately run EVERY tick rather than stopping at the first non-zero measurement: the
+            // first one lands before sibling chrome (the ActionBar) has laid out, so it measures the
+            // full area and the page ends up over the toolbar. Later ticks are no-ops once the rect
+            // stops changing.
+            if (++i < delays.length) { setTimeout(tick, delays[i]); }
+        };
+        setTimeout(tick, delays[0]);
+    },
     syncBounds: function () {
         if (!this.pageView || !this.hasNode()) { return; }
         var r = this.node.getBoundingClientRect();
@@ -130,7 +148,7 @@ enyo.kind({
         } catch (e) {}
     },
     resize: function () {
-        this.syncBounds();
+        this.scheduleBoundsSync();
     },
     resizeHandler: function () {
         this.inherited(arguments);
@@ -140,7 +158,7 @@ enyo.kind({
         this.inherited(arguments);
         if (this.pageView) {
             try { this.pageView.setVisible(!!this.showing); } catch (e) {}
-            if (this.showing) { this.syncBounds(); }
+            if (this.showing) { this.scheduleBoundsSync(); }
         }
     },
     /* Foreground/background a whole tab (see TabLayer.js). Hiding alone would leave the page live and
@@ -155,7 +173,7 @@ enyo.kind({
                 var shellWin = window.shell && window.shell.shellWindow;
                 if (shellWin && this.pageView) { shellWin.pageView.bringToFront(this.pageView); }
                 this._bounds = "";              // force a re-push; layout may have moved while hidden
-                this.syncBounds();
+                this.scheduleBoundsSync();
                 // Deliberately NOT calling pc.setFocus() here: the native view takes keyboard focus away
                 // from the UI page, which makes Atlas's address bar impossible to type in. Chromium
                 // focuses the page itself when the user taps it.
@@ -200,6 +218,18 @@ enyo.kind({
         on("did-finish-navigation", function () {
             self.refreshNavState();
             var u = self.currentUrl();
+            /* A newly created page view starts at about:blank, and that navigation can complete AFTER
+             * our loadURL — clobbering the requested URL in Atlas's address bar and tab label, or even
+             * leaving the tab blank if the early load was dropped. Ignore the blank state while a real
+             * URL is outstanding, and re-issue the load once in case it never took. */
+            if (self.isBlank(u) && !self.isBlank(self.requestedUrl)) {
+                if (!self._reissued) {
+                    self._reissued = true;
+                    var want = self.requestedUrl;
+                    setTimeout(function () { if (self.pageContents) { try { self.pageContents.loadURL(want); } catch (e) {} } }, 0);
+                }
+                return;
+            }
             if (u && u !== self.url) {
                 self.url = u;
                 // NOT doUrlRedirected: BrowserApp maps that event to openResource, which asks the
@@ -254,7 +284,12 @@ enyo.kind({
     },
 
     pushTitle: function () {
-        this.doPageTitleChanged(this.title, this.currentUrl(), this.canGoBack, this.canGoForward);
+        var u = this.currentUrl();
+        if (this.isBlank(u) && !this.isBlank(this.requestedUrl)) { return; }   // see did-finish-navigation
+        this.doPageTitleChanged(this.title, u, this.canGoBack, this.canGoForward);
+    },
+    isBlank: function (u) {
+        return !u || u === "about:blank";
     },
     refreshNavState: function () {
         if (!this.pageContents) { return; }
@@ -306,6 +341,8 @@ enyo.kind({
     loadUrl: function (inUrl) {
         var u = this.stripMarkers(inUrl);
         if (!u) { return; }
+        this.requestedUrl = u;
+        this._reissued = false;
         if (!this.pageContents) { this.pendingUrl = u; return; }
         try { this.pageContents.loadURL(u); } catch (e) { this.error("[Atlas] loadURL failed " + e); }
     },

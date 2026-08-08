@@ -113,8 +113,15 @@ enyo.kind({
         this.atlasUpdateStrip();
     };
 
+    /* Resolve a tab's view, caching the instance the first time. Name lookup alone is not enough: tab 0
+     * is called "browser" and selecting another tab re-points this.$.browser at it, so a later lookup
+     * by name would hand back the wrong view (both tabs then show the same title). */
     proto.atlasView = function (tab) {
-        return (tab && tab.name) ? this.$[tab.name] : null;
+        if (!tab) { return null; }
+        if (tab.view) { return tab.view; }
+        var v = tab.name ? this.$[tab.name] : null;
+        if (v) { tab.view = v; }
+        return v;
     };
     proto.atlasActiveView = function () {
         return this.atlasView((this.atlasTabs || [])[this.atlasActive || 0]);
@@ -146,6 +153,9 @@ enyo.kind({
         var name = "browserTab" + (new Date()).getTime();
         var c = enyo.mixin(enyo.clone(cfg), { name: name });
         var view = this.$.pane.createComponent(c, { owner: this });
+        // enyo does not render a component created after its container is already rendered — without
+        // this the view has no node, so its WebView never builds a page view and the tab comes up blank.
+        view.render();
         var tab = { name: name, title: "", url: "" };
         this.atlasTabs.push(tab);
 
@@ -240,6 +250,31 @@ enyo.kind({
         this.$.tabStrip.setActiveIndex(this.atlasActive || 0);
         this.$.tabStrip.setShowing(tabs.length > 1);
         if (this.$.tabStrip.showing !== wasShowing) { this.atlasResyncBounds(); }
+    };
+
+    /* Relaunch with a URL. On webOS the handler reuses or opens a CARD; here the equivalent is a tab.
+     * A blank tab is reused rather than piling up empties (the launcher tap that just brings the app
+     * forward carries no URL and falls through to Atlas's own handler untouched). */
+    var origRelaunch = proto.applicationRelaunchHandler;
+    proto.applicationRelaunchHandler = function () {
+        var params = enyo.windowParams || {};
+        var url = params.target || params.url;
+        if (url && !this.isAtlasHome(url)) {
+            var wvId = params.webviewId;
+            // atlas-private: is the WPE private-card marker; on this host it maps to a private tab,
+            // which the adapter turns into a throwaway partition.
+            if (!wvId && String(url).indexOf("atlas-private:") === 0) {
+                wvId = "private-" + (new Date()).getTime();
+            }
+            var active = this.atlasActiveView();
+            if (active && !active.url && !wvId) {
+                active.setUrl(url);                       // empty tab: navigate it instead
+            } else {
+                this.atlasOpenTab({ target: url, webviewId: wvId });
+            }
+            return true;
+        }
+        return origRelaunch ? origRelaunch.apply(this, arguments) : true;
     };
 
     // Keep the strip's labels in step with whatever the active tab is showing.

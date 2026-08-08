@@ -173,6 +173,23 @@
         getResource: getResource
     };
 
+    /* Relaunch. On webOS, LunaSysMgr calls Mojo.relaunch(), which makes enyo re-read
+     * PalmSystem.launchParams, push them onto the root window and dispatch applicationRelaunch.
+     * browser_shell instead fires a DOM "webOSRelaunch" event carrying the new launch args (this is
+     * what enactbrowser listens for). Translate one into the other so Atlas's own relaunch handler
+     * runs with the new params, exactly as it does on a device. */
+    document.addEventListener("webOSRelaunch", function (ev) {
+        var detail = (ev && ev.detail) || {};
+        PalmSystem.launchParams = JSON.stringify(detail);
+        try { if (window.shell) { window.shell.launchArgs = detail; } } catch (e) {}
+        try {
+            if (window.Mojo && window.Mojo.relaunch) { window.Mojo.relaunch(); }
+            else if (window.enyo && enyo.windows && enyo.windows.events) { enyo.windows.events.handleRelaunch(); }
+        } catch (e2) {
+            try { console.log("[Atlas] relaunch dispatch failed: " + e2); } catch (e3) {}
+        }
+    }, false);
+
     window.PalmSystem = PalmSystem;
     // WAM injects both names and some framework/app code reads the modern one; keep them the same
     // object so a write through either is visible to the other.
