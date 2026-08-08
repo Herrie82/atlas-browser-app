@@ -15,6 +15,7 @@
 enyo.depends(
 	"source/AtlasEngineOverride.js",
 	"source/engine/ChromiumWebView.js",
+	"source/engine/ChromiumOverlay.js",
 	"css/chromium-tabs.css",
 	"$enyo-lib/printdialog/",
 	"css/browser.css",

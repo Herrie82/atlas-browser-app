@@ -166,12 +166,21 @@ enyo.kind({
             if (this.showing) { this.scheduleBoundsSync(); }
         }
     },
+    /* Yield the screen area to an Atlas popup: the native view is composited above the UI page, so a
+     * popup drawn over the page is invisible until the view stops painting there (ChromiumOverlay.js).
+     * The page keeps running — only its pixels go away. */
+    setOverlayHidden: function (hidden) {
+        this._overlayHidden = !!hidden;
+        if (!this.pageView) { return; }
+        try { this.pageView.setVisible(!hidden && !!this.showing); } catch (e) {}
+        if (!hidden) { this.scheduleBoundsSync(); }
+    },
     /* Foreground/background a whole tab (see TabLayer.js). Hiding alone would leave the page live and
      * costing memory, so a backgrounded view also suspends its DOM and media. */
     setEngineActive: function (active) {
         var pc = this.pageContents;
         try {
-            if (this.pageView) { this.pageView.setVisible(!!active); }
+            if (this.pageView) { this.pageView.setVisible(!!active && !this._overlayHidden); }
             if (!pc) { return; }
             if (active) {
                 pc.resumeDOM(); pc.resumeMedia(); pc.activate();
@@ -327,6 +336,51 @@ enyo.kind({
             "  if (typeof ShellIpc === 'undefined') { return; }" +
             "  window.__atlasInputBridge = 1;" +
             "  var ipc = new ShellIpc(" + JSON.stringify(this.ipcChannel()) + ");" +
+            /* Hit-test for the long-press menu: what Atlas needs to decide between the link, image,
+             * edit and page menus. */
+            "  var hit = function (el) {" +
+            "    var link = null, img = null, n = el;" +
+            "    while (n && n !== document) {" +
+            "      if (!link && n.tagName === 'A' && n.href) { link = n; }" +
+            "      if (!img && n.tagName === 'IMG') { img = n; }" +
+            "      n = n.parentNode;" +
+            "    }" +
+            "    var tag = (el && el.tagName || '').toUpperCase();" +
+            "    var editable = !!(el && el.isContentEditable) || tag === 'TEXTAREA' ||" +
+            "      (tag === 'INPUT' && /^(text|search|url|email|tel|password|number|)$/i.test(el.type || ''));" +
+            "    return {" +
+            "      isLink: !!link, linkUrl: link ? link.href : ''," +
+            "      linkText: link ? (link.textContent || '').replace(/\\s+/g, ' ').substring(0, 200) : ''," +
+            "      isImage: !!img, imageUrl: img ? img.src : ''," +
+            "      title: (img && img.title) || (link && link.title) || ''," +
+            "      altText: (img && img.alt) || ''," +
+            "      editable: editable" +
+            "    };" +
+            "  };" +
+            "  var postHold = function (x, y, el) {" +
+            "    ipc.post('hold', { x: x, y: y, info: hit(el || document.elementFromPoint(x, y)) });" +
+            "  };" +
+            /* Blink raises contextmenu for a touch long-press as well as a right-click, so it covers
+             * both; preventDefault stops Chromium's own menu appearing under Atlas's. */
+            "  document.addEventListener('contextmenu', function (e) {" +
+            "    e.preventDefault();" +
+            "    postHold(e.clientX, e.clientY, e.target);" +
+            "  }, true);" +
+            /* Fallback for touch builds that never synthesise contextmenu. */
+            "  var timer = null, sx = 0, sy = 0;" +
+            "  var cancel = function () { if (timer) { clearTimeout(timer); timer = null; } };" +
+            "  document.addEventListener('touchstart', function (e) {" +
+            "    if (!e.touches || e.touches.length !== 1) { cancel(); return; }" +
+            "    var t = e.touches[0]; sx = t.clientX; sy = t.clientY;" +
+            "    cancel();" +
+            "    timer = setTimeout(function () { timer = null; postHold(sx, sy, null); }, 550);" +
+            "  }, true);" +
+            "  document.addEventListener('touchmove', function (e) {" +
+            "    var t = e.touches && e.touches[0];" +
+            "    if (!t || Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) { cancel(); }" +
+            "  }, true);" +
+            "  document.addEventListener('touchend', cancel, true);" +
+            "  document.addEventListener('touchcancel', cancel, true);" +
             "  document.addEventListener('click', function (e) {" +
             "    var n = e.target, link = '', img = '';" +
             "    while (n && n !== document) { if (n.tagName === 'A' && n.href) { link = n.href; break; } n = n.parentNode; }" +
@@ -353,6 +407,7 @@ enyo.kind({
             this._ipc = new window.ShellIpc(this.ipcChannel());
             this._ipc.on("tap", function (msg) { self.onPageTap(msg || {}); });
             this._ipc.on("scroll", function (msg) { self.onPageScroll(msg || {}); });
+            this._ipc.on("hold", function (msg) { self.onPageHold(msg || {}); });
         } catch (e) {
             enyo.log("[Atlas] input bridge unavailable: " + e);
         }
@@ -367,6 +422,28 @@ enyo.kind({
     },
     onPageScroll: function (msg) {
         this.doScrolledTo(msg.x || 0, msg.y || 0);
+    },
+    /* Long press -> Atlas's context menu. openContextMenu reads pageX/pageY to place the popup and
+     * the hit-test to choose between the link, image, edit and page menus. */
+    onPageHold: function (msg) {
+        var r = this._rect || { left: 0, top: 0 };
+        var ev = { pageX: r.left + (msg.x || 0), pageY: r.top + (msg.y || 0) };
+        this.doMousehold(ev, msg.info || {});
+    },
+    /* Chromium selects natively, but Atlas drives the plain-text long press through
+     * enableSelectionMode, so honour it by selecting the word under the point. The app-space point has
+     * to come back to page space first. Atlas's marker/popover UI stays unwired: it is fed by the WPE
+     * backend's selectionBounds messages, which have no equivalent here. */
+    selectWordAt: function (appX, appY) {
+        var r = this._rect || { left: 0, top: 0 };
+        var x = Math.round((appX || 0) - r.left), y = Math.round((appY || 0) - r.top);
+        this.runScript(
+            "(function(){" +
+            "  var rng = document.caretRangeFromPoint ? document.caretRangeFromPoint(" + x + "," + y + ") : null;" +
+            "  if (!rng) { return; }" +
+            "  var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(rng);" +
+            "  if (sel.modify) { sel.modify('move', 'backward', 'word'); sel.modify('extend', 'forward', 'word'); }" +
+            "})();");
     },
 
     /* Schemes the engine itself cannot render — these are the ones Atlas should hand to the system
@@ -465,6 +542,8 @@ enyo.kind({
         case "copy":            this.runScript("document.execCommand('copy');"); break;
         case "paste":           this.runScript("document.execCommand('paste');"); break;
         case "selectAll":       this.runScript("document.execCommand('selectAll');"); break;
+        case "enableSelectionMode": this.selectWordAt(a[0], a[1]); break;
+        case "clearSelection":  this.runScript("try { window.getSelection().removeAllRanges(); } catch (e) {}"); break;
         case "acceptDialog":    this.answerDialog(true, a); break;
         case "cancelDialog":    this.answerDialog(false, a); break;
         case "sendDialogResponse": this.answerDialog(!!a[0], []); break;
@@ -478,12 +557,10 @@ enyo.kind({
         case "ignoreMetaRefreshTags":
         case "setUserSelect":
         case "printFrame":
-        // Text selection is native in Chromium (handles and all), so Atlas's marker-driven selection
-        // commands have nothing to drive.
-        case "enableSelectionMode":
+        // The rest of Atlas's marker-driven selection has nothing to drive: Chromium owns the drag
+        // handles, and there is no selectionBounds channel to place Atlas's own markers.
         case "disableSelectionMode":
         case "extendSelectionTo":
-        case "clearSelection":
         case "setDragMode":
             this.unsupported(inMethod);
             break;
