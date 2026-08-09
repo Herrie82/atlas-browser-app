@@ -110,12 +110,37 @@ enyo.kind({
         // AtlasEngineOverride routes atlasOpenCard here on this host.
         var self = this;
         window.__atlasOpenTab = function (params) { self.atlasOpenTab(params || {}); };
+        this.atlasPatchPane();
         this.atlasUpdateStrip();
     };
 
     /* Resolve a tab's view, caching the instance the first time. Name lookup alone is not enough: tab 0
      * is called "browser" and selecting another tab re-points this.$.browser at it, so a later lookup
      * by name would hand back the wrong view (both tabs then show the same title). */
+    /* Atlas identifies the browser view BY NAME ("browser"): isBrowserShowing compares the pane's
+     * current view name, and gotoView/selectViewByName("browser") switches to it. A tab is a different
+     * component with a different name, so on any tab but the first, entering a URL looked dead — the
+     * app decided the browser was not showing, switched the pane to tab 0, and loaded the URL into the
+     * active tab that was no longer on screen. Teach both about tabs. */
+    var TAB_PREFIX = "browserTab";
+    proto.isBrowserShowing = function () {
+        var n = this.$.pane.getViewName();
+        return n === "browser" || String(n).indexOf(TAB_PREFIX) === 0;
+    };
+    proto.atlasPatchPane = function () {
+        var pane = this.$.pane, self = this;
+        if (!pane || pane._atlasPatched) { return; }
+        pane._atlasPatched = true;
+        var orig = pane.selectViewByName;
+        pane.selectViewByName = function (inName, inSync) {
+            if (inName === "browser") {
+                var tab = (self.atlasTabs || [])[self.atlasActive || 0];
+                if (tab && tab.name) { inName = tab.name; }      // "the browser" means the ACTIVE tab
+            }
+            return orig.call(this, inName, inSync);
+        };
+    };
+
     proto.atlasView = function (tab) {
         if (!tab) { return null; }
         if (tab.view) { return tab.view; }

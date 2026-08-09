@@ -113,6 +113,31 @@
 
     function noop() {}
 
+    /* Which element counts as "typing target" — used by the keyboard show/hide mapping below. */
+    function isEditable(el) {
+        if (!el) { return false; }
+        if (el.isContentEditable) { return true; }
+        var tag = (el.tagName || "").toUpperCase();
+        if (tag === "TEXTAREA") { return true; }
+        return tag === "INPUT" &&
+            /^(text|search|url|email|tel|password|number|)$/i.test(el.type || "");
+    }
+    function firstVisibleEditable() {
+        var els = document.querySelectorAll("input, textarea, [contenteditable]");
+        for (var i = 0; i < els.length; i++) {
+            var el = els[i];
+            if (!isEditable(el) || el.disabled || el.readOnly) { continue; }
+            if (el.offsetParent === null) { continue; }
+            var r = el.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) { return el; }
+        }
+        return null;
+    }
+    var lastEditable = null;
+    document.addEventListener("focusin", function (ev) {
+        if (isEditable(ev.target)) { lastEditable = ev.target; }
+    }, true);
+
     var PalmSystem = {
         // --- identity / launch -------------------------------------------------------------------
         identifier: launchArgs.appId || launchArgs.nid || "org.webosports.app.atlas",
@@ -153,9 +178,28 @@
         removeNewContentIndicator: noop,
 
         // --- input / IME -------------------------------------------------------------------------
-        // LuneOS drives the on-screen keyboard through Maliit in the compositor; the app has no say.
-        keyboardShow: noop,
-        keyboardHide: noop,
+        /* There is no API to raise Maliit: Chromium's IME follows FOCUS, so the keyboard appears when
+         * an editable element is focused and goes away when it is blurred. Atlas's keyboard button
+         * routes through enyo.keyboard -> these two, so map them onto focus and blur — showing the
+         * keyboard puts the caret back in the field the user was last typing in. */
+        keyboardShow: function () {
+            var el = document.activeElement;
+            if (el && isEditable(el)) {
+                try { el.blur(); el.focus(); } catch (e) {}     // nudge the IME for an already-focused field
+                return;
+            }
+            var last = lastEditable;
+            if (!last || !document.body || !document.body.contains(last)) {
+                // Nothing focused yet this session (the user pressed the keyboard button first):
+                // fall back to the first visible editable field, which is the address bar.
+                last = firstVisibleEditable();
+            }
+            if (last) { try { last.focus(); } catch (e2) {} }
+        },
+        keyboardHide: function () {
+            var el = document.activeElement;
+            try { if (el && el.blur) { el.blur(); } } catch (e) {}
+        },
         setManualKeyboardEnabled: noop,
         editorFocused: noop,
         useSimulatedMouseClicks: noop,

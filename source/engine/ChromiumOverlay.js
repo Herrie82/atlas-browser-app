@@ -40,13 +40,57 @@ if (window.__atlasChromium) {
         return false;
     }
 
+    /* Popups are not the only thing Atlas draws over the page: the bookmarks / history / downloads
+     * toaster is an ordinary view, and it is a 320px drawer pinned to the right edge — point sampling
+     * inside the page rect misses it entirely. Hit testing is the wrong instrument anyway, because an
+     * overlay that paints UNDER the transparent placeholder is still hidden by the native view.
+     *
+     * So: walk up from the placeholder and look at the siblings along the way. Any visible sibling
+     * whose box meaningfully overlaps the page area is UI that the page would be covering. The walk is
+     * bounded by the depth of the tree, and it stays generic — no list of class names to maintain. */
+    function overlaps(a, b) {
+        var w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        var h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        return w > 16 && h > 16;          // ignore hairline touching (borders, 1px separators)
+    }
+
+    function isVisible(el) {
+        if (el.offsetParent === null) { return false; }
+        var st = window.getComputedStyle(el);
+        if (!st || st.visibility === "hidden" || st.opacity === "0") { return false; }
+        var r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+    }
+
+    function placeholderCovered(wv) {
+        var node = (wv && wv.hasNode && wv.hasNode()) ? wv.node : null;
+        if (!node) { return false; }
+        var rect = node.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) { return false; }
+        var el = node;
+        while (el && el.parentNode && el.parentNode.children) {
+            var sibs = el.parentNode.children;
+            for (var i = 0; i < sibs.length; i++) {
+                var sib = sibs[i];
+                if (sib === el || sib.contains(node)) { continue; }
+                if (!isVisible(sib)) { continue; }
+                if (overlaps(sib.getBoundingClientRect(), rect)) { return true; }
+            }
+            el = el.parentNode;
+        }
+        return false;
+    }
+
     function evaluate() {
         scheduled = null;
-        var state = anyPopupVisible();
+        var wv = activeWebView();
+        if (!wv || !wv.setOverlayHidden) { return; }
+        // The placeholder is a DOM div and the page view is not in the DOM at all, so this hit test
+        // reads the same whether the page is currently painting or not — no feedback loop.
+        var state = anyPopupVisible() || placeholderCovered(wv);
         if (state === lastState) { return; }
         lastState = state;
-        var wv = activeWebView();
-        if (wv && wv.setOverlayHidden) { wv.setOverlayHidden(state); }
+        wv.setOverlayHidden(state);
     }
 
     function schedule() {
