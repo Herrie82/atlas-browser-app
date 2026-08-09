@@ -1,7 +1,0 @@
-{
-    "id": "org.webosports.autofill:1",
-    "owner": "org.webosports.app.atlas",
-    "indexes": [
-        { "name": "name", "props": [ { "name": "name" } ] }
-    ]
-}

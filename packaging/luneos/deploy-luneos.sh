@@ -92,37 +92,52 @@ for f in "$SCRIPT_DIR"/sysbus/*.json; do
 done
 sshc "ls-control scan-services >/dev/null 2>&1 || true"
 
-# 5b. db8 kinds. On legacy webOS the browser kinds shipped with the stock browser; LuneOS has never had
-#     them ("kind not registered: 'com.palm.browserbookmarks:1'"), so bookmarks / history / passwords /
-#     autofill would fail silently. Register them (idempotent) and grant the app every operation — the
-#     caller name db8 sees carries an instance suffix (org.webosports.app.atlas-1), hence the wildcard.
-# A direct putKind is refused ("db: permission denied") because the caller isn't the kind's owner, so
-# use the platform path: drop kind + permission files in /etc/palm/db and let the configurator install
-# them, exactly as every stock webOS app does. Permissions are granted to a wildcard caller because the
-# hub gives a browsershell app an instance suffix (org.webosports.app.atlas-1).
+# 5b. db8 kinds. LuneOS never had com.palm.browserbookmarks / browserhistory / browserpreferences (they
+# shipped with the legacy stock browser) nor org.webosports.logins / autofill, so bookmarks, history,
+# passwords and autofill fail silently until they exist. These are the SAME definitions the legacy ipk
+# installs (db/kinds, db/permissions in the repo) — a direct putKind is refused for a non-owner, so use
+# the platform path and let the configurator install them.
+#
+# Two transforms are needed. The kinds are owned by com.palm.app.browser, the legacy stock browser that
+# owns them on a real webOS device; that service does not exist here and db8 will not register a kind
+# for an unknown owner (the configurator reports success and nothing appears), so ownership moves to the
+# app. And the permissions name the app exactly, which never matches the instance-suffixed name the hub
+# hands a browsershell app.
 echo "-- registering db8 kinds --"
-PERMSTAGE=$(mktemp -d)
-for k in "$SCRIPT_DIR"/db8/*.json; do
-  name=$(basename "$k" .json)
-  kind=$(python3 -c "import json; print(json.load(open('$k'))['id'])")
-  python3 - "$kind" > "$PERMSTAGE/$name" <<'PY'
-import json, sys
-kind = sys.argv[1]
-callers = ["org.webosports.app.atlas", "org.webosports.app.atlas*"]
-print(json.dumps([{
-    "type": "db.kind",
-    "object": kind,
-    "caller": c,
-    "operations": {"read": "allow", "create": "allow", "update": "allow", "delete": "allow"}
-} for c in callers], indent=4))
-PY
-  scp -q $SCPOPT "$k" "$TARGET:/etc/palm/db/kinds/$name"
-  scp -q $SCPOPT "$PERMSTAGE/$name" "$TARGET:/etc/palm/db/permissions/$name"
-  echo "   $kind"
+DBSTAGE="$STAGE/.db8"
+mkdir -p "$DBSTAGE"
+cp -a "$APP/db/kinds" "$APP/db/permissions" "$DBSTAGE/"
+sed -i 's/"owner"[[:space:]]*:[[:space:]]*"com\.palm\.app\.browser"/"owner":"org.webosports.app.atlas"/' "$DBSTAGE"/kinds/*
+# The hub gives a browsershell app an instance-suffixed name (org.webosports.app.atlas-1), which an
+# exact caller never matches; wildcard callers are the norm on this platform.
+sed -i 's/"caller"[[:space:]]*:[[:space:]]*"org\.webosports\.app\.atlas"/"caller":"org.webosports.app.atlas*"/' "$DBSTAGE"/permissions/*
+sshc "mkdir -p /etc/palm/db/kinds /etc/palm/db/permissions"
+tar -C "$DBSTAGE" -czf - kinds permissions | sshc "tar -C /etc/palm/db -xzf -"
+# The configurator applies these at boot on a fresh image. On a device that has seen an earlier copy it
+# remembers the filenames and quietly skips them even with force, so a redeploy also registers each kind
+# directly, as the app (the owner is allowed to putKind; root is not).
+sshc "luna-send -n 1 palm://com.palm.configurator/run '{\"types\":[\"dbkinds\"],\"force\":true}' >/dev/null 2>&1"
+sshc "luna-send -n 1 palm://com.palm.configurator/run '{\"types\":[\"dbpermissions\"],\"force\":true}' >/dev/null 2>&1"
+cat > "$STAGE/register-db8.sh" <<'EOS'
+#!/bin/sh
+# Register exactly the kinds this app ships (not everything in /etc/palm/db) as the app itself: the
+# owner may putKind, root may not. Idempotent — putKind on an existing kind just updates it.
+ID="$1"; shift
+for name in "$@"; do
+  k="/etc/palm/db/kinds/$name"
+  [ -f "$k" ] && luna-send -n 1 -a "$ID" -f luna://com.palm.db/putKind "$(cat "$k")" >/dev/null 2>&1
 done
-rm -rf "$PERMSTAGE"
-sshc "luna-send -n 1 palm://com.palm.configurator/run '{\"types\":[\"dbkinds\"]}' >/dev/null 2>&1; \
-      luna-send -n 1 palm://com.palm.configurator/run '{\"types\":[\"dbpermissions\"]}' >/dev/null 2>&1"
+for name in "$@"; do
+  p="/etc/palm/db/permissions/$name"
+  [ -f "$p" ] && luna-send -n 1 -a "$ID" -f luna://com.palm.db/putPermissions "{\"permissions\":$(cat "$p")}" >/dev/null 2>&1
+done
+EOS
+KIND_NAMES=""
+for k in "$DBSTAGE"/kinds/*; do KIND_NAMES="$KIND_NAMES $(basename "$k")"; done
+PERM_NAMES=""
+for p in "$DBSTAGE"/permissions/*; do PERM_NAMES="$PERM_NAMES $(basename "$p")"; done
+scp -q $SCPOPT "$STAGE/register-db8.sh" "$TARGET:/tmp/register-db8.sh"
+sshc "sh /tmp/register-db8.sh $ID $KIND_NAMES $PERM_NAMES; rm -f /tmp/register-db8.sh"
 
 # 6. SAM only picks up a newly installed app dir on restart.
 sshc "systemctl restart sam.service"
