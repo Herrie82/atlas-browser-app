@@ -113,32 +113,10 @@ sed -i 's/"owner"[[:space:]]*:[[:space:]]*"com\.palm\.app\.browser"/"owner":"org
 sed -i 's/"caller"[[:space:]]*:[[:space:]]*"org\.webosports\.app\.atlas"/"caller":"org.webosports.app.atlas*"/' "$DBSTAGE"/permissions/*
 sshc "mkdir -p /etc/palm/db/kinds /etc/palm/db/permissions"
 tar -C "$DBSTAGE" -czf - kinds permissions | sshc "tar -C /etc/palm/db -xzf -"
-# The configurator applies these at boot on a fresh image. On a device that has seen an earlier copy it
-# remembers the filenames and quietly skips them even with force, so a redeploy also registers each kind
-# directly, as the app (the owner is allowed to putKind; root is not).
-sshc "luna-send -n 1 palm://com.palm.configurator/run '{\"types\":[\"dbkinds\"],\"force\":true}' >/dev/null 2>&1"
-sshc "luna-send -n 1 palm://com.palm.configurator/run '{\"types\":[\"dbpermissions\"],\"force\":true}' >/dev/null 2>&1"
-cat > "$STAGE/register-db8.sh" <<'EOS'
-#!/bin/sh
-# Register exactly the kinds this app ships (not everything in /etc/palm/db) as the app itself: the
-# owner may putKind, root may not. Idempotent — putKind on an existing kind just updates it.
-ID="$1"; shift
-for name in "$@"; do
-  k="/etc/palm/db/kinds/$name"
-  [ -f "$k" ] && luna-send -n 1 -a "$ID" -f luna://com.palm.db/putKind "$(cat "$k")" >/dev/null 2>&1
-done
-for name in "$@"; do
-  p="/etc/palm/db/permissions/$name"
-  [ -f "$p" ] && luna-send -n 1 -a "$ID" -f luna://com.palm.db/putPermissions "{\"permissions\":$(cat "$p")}" >/dev/null 2>&1
-done
-EOS
-KIND_NAMES=""
-for k in "$DBSTAGE"/kinds/*; do KIND_NAMES="$KIND_NAMES $(basename "$k")"; done
-PERM_NAMES=""
-for p in "$DBSTAGE"/permissions/*; do PERM_NAMES="$PERM_NAMES $(basename "$p")"; done
-scp -q $SCPOPT "$STAGE/register-db8.sh" "$TARGET:/tmp/register-db8.sh"
-sshc "sh /tmp/register-db8.sh $ID $KIND_NAMES $PERM_NAMES; rm -f /tmp/register-db8.sh"
-
+# The configurator is what installs these — at boot from an image, or on demand here. NB: do not pass
+# force:true. It reports a higher "configured" count and registers nothing; the plain run works.
+sshc "luna-send -n 1 palm://com.palm.configurator/run '{\"types\":[\"dbkinds\"]}' >/dev/null 2>&1"
+sshc "luna-send -n 1 palm://com.palm.configurator/run '{\"types\":[\"dbpermissions\"]}' >/dev/null 2>&1"
 # 6. SAM only picks up a newly installed app dir on restart.
 sshc "systemctl restart sam.service"
 until sshc "systemctl is-active sam.service" 2>/dev/null | grep -q active; do sleep 2; done
