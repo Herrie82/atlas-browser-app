@@ -134,9 +134,26 @@
         return null;
     }
     var lastEditable = null;
+    /* KEY EVENTS FOLLOW THE SHELL'S FOCUS, NOT THE DOM'S. The shell hands keyboard focus to the tab's
+     * native page view, so anything typed goes to the web page and Atlas's own fields stay empty — the
+     * address bar accepts no letters and Enter never reaches it. Whenever the user puts the caret in a
+     * UI field, take shell focus back for the UI page (the counterpart lives in ChromiumWebView: a tap
+     * inside the page gives focus back to the page). */
+    function focusUiPage() {
+        var pc = rootPageContents();
+        try { if (pc && pc.setFocus) { pc.setFocus(); } } catch (e) {}
+    }
     document.addEventListener("focusin", function (ev) {
-        if (isEditable(ev.target)) { lastEditable = ev.target; }
+        if (isEditable(ev.target)) {
+            lastEditable = ev.target;
+            focusUiPage();
+        }
     }, true);
+    // A click anywhere in the app chrome is also UI interaction, not page interaction.
+    document.addEventListener("mousedown", function () { focusUiPage(); }, true);
+    // And start with the UI holding focus, so the very first keystroke goes to the address bar rather
+    // than into whatever page the launch target loaded.
+    setTimeout(focusUiPage, 1200);
 
     var PalmSystem = {
         // --- identity / launch -------------------------------------------------------------------
@@ -195,6 +212,7 @@
                 last = firstVisibleEditable();
             }
             if (last) { try { last.focus(); } catch (e2) {} }
+            focusUiPage();
         },
         keyboardHide: function () {
             var el = document.activeElement;

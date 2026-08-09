@@ -415,6 +415,9 @@ enyo.kind({
     /* Page coordinates are relative to the page view; Atlas works in app-window coordinates, so shift
      * by where the view currently sits. */
     onPageTap: function (msg) {
+        // The user touched the page: keyboard focus belongs to it now (the shim hands focus back to
+        // the UI page whenever a UI field is focused).
+        try { if (this.pageContents && this.pageContents.setFocus) { this.pageContents.setFocus(); } } catch (e) {}
         var r = this._rect || { left: 0, top: 0 };
         var position = { left: r.left + (msg.x || 0), top: r.top + (msg.y || 0) };
         var tapInfo = { linkUrl: msg.link || "", imageUrl: msg.img || "" };
