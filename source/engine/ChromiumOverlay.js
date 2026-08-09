@@ -62,11 +62,12 @@ if (window.__atlasChromium) {
         return r.width > 0 && r.height > 0;
     }
 
-    function placeholderCovered(wv) {
+    function coveringRects(wv) {
         var node = (wv && wv.hasNode && wv.hasNode()) ? wv.node : null;
-        if (!node) { return false; }
+        if (!node) { return null; }
         var rect = node.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) { return false; }
+        if (rect.width <= 0 || rect.height <= 0) { return null; }
+        var found = [];
         var el = node;
         while (el && el.parentNode && el.parentNode.children) {
             var sibs = el.parentNode.children;
@@ -74,23 +75,63 @@ if (window.__atlasChromium) {
                 var sib = sibs[i];
                 if (sib === el || sib.contains(node)) { continue; }
                 if (!isVisible(sib)) { continue; }
-                if (overlaps(sib.getBoundingClientRect(), rect)) { return true; }
+                var r = sib.getBoundingClientRect();
+                if (overlaps(r, rect)) { found.push(r); }
             }
             el = el.parentNode;
         }
-        return false;
+        return { page: rect, covers: found };
+    }
+
+    /* Work out how much of the page area is still free. A drawer pinned to one edge (the toaster is
+     * 320px on the right, full height) only needs the page to step aside by that much — blanking the
+     * whole thing was needlessly destructive. Anything that is NOT a full edge band (a context menu in
+     * the middle, say) cannot be worked around: for those the page still has to stop painting.
+     *
+     * Returns: false = nothing covering, a rect = shrink to it, null = hide. */
+    var EDGE = 4;          // tolerance for "touches this edge"
+    var MIN_LEFT = 120;    // pointless to keep a sliver of page
+
+    function freeArea(wv) {
+        var info = coveringRects(wv);
+        if (!info) { return false; }
+        if (!info.covers.length) { return false; }
+        var p = info.page;
+        var left = p.left, top = p.top, right = p.right, bottom = p.bottom;
+        for (var i = 0; i < info.covers.length; i++) {
+            var c = info.covers[i];
+            var fullHeight = (c.top <= top + EDGE) && (c.bottom >= bottom - EDGE);
+            var fullWidth = (c.left <= left + EDGE) && (c.right >= right - EDGE);
+            if (fullHeight && c.right >= right - EDGE) { right = Math.min(right, c.left); }
+            else if (fullHeight && c.left <= left + EDGE) { left = Math.max(left, c.right); }
+            else if (fullWidth && c.bottom >= bottom - EDGE) { bottom = Math.min(bottom, c.top); }
+            else if (fullWidth && c.top <= top + EDGE) { top = Math.max(top, c.bottom); }
+            else { return null; }                       // covers the middle — cannot clip around it
+        }
+        if (right - left < MIN_LEFT || bottom - top < MIN_LEFT) { return null; }
+        return { left: left, top: top, width: right - left, height: bottom - top };
     }
 
     function evaluate() {
         scheduled = null;
         var wv = activeWebView();
         if (!wv || !wv.setOverlayHidden) { return; }
-        // The placeholder is a DOM div and the page view is not in the DOM at all, so this hit test
-        // reads the same whether the page is currently painting or not — no feedback loop.
-        var state = anyPopupVisible() || placeholderCovered(wv);
-        if (state === lastState) { return; }
-        lastState = state;
-        wv.setOverlayHidden(state);
+        // A popup is transient and usually lands mid-screen, so it keeps the simple treatment. Anything
+        // else gets the geometry answer: shrink where we can, hide only when we must.
+        var hide, clip = null;
+        if (anyPopupVisible()) {
+            hide = true;
+        } else {
+            var area = freeArea(wv);            // false | rect | null
+            if (area === false) { hide = false; }
+            else if (area) { hide = false; clip = area; }
+            else { hide = true; }
+        }
+        var key = (hide ? "hide" : "show") + (clip ? [clip.left, clip.top, clip.width, clip.height].join(",") : "");
+        if (key === lastState) { return; }
+        lastState = key;
+        wv.setOverlayClip(clip);
+        wv.setOverlayHidden(hide);
     }
 
     function schedule() {

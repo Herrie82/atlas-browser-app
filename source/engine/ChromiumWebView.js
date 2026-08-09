@@ -143,14 +143,35 @@ enyo.kind({
         if (!this.pageView || !this.hasNode()) { return; }
         var r = this.node.getBoundingClientRect();
         if (r.width <= 0 || r.height <= 0) { return; }
-        var key = [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)].join(",");
-        this._rect = { left: Math.round(r.left), top: Math.round(r.top) };   // for page -> app coords
+        var left = r.left, top = r.top, right = r.right, bottom = r.bottom;
+        // An edge overlay (the bookmarks / history / downloads drawer) does not have to blank the page:
+        // give the view the part of the area nobody else is using. See ChromiumOverlay.
+        var c = this._clip;
+        if (c) {
+            left = Math.max(left, c.left);
+            top = Math.max(top, c.top);
+            right = Math.min(right, c.left + c.width);
+            bottom = Math.min(bottom, c.top + c.height);
+            if (right - left <= 0 || bottom - top <= 0) { return; }
+        }
+        var key = [Math.round(left), Math.round(top), Math.round(right - left), Math.round(bottom - top)].join(",");
+        this._rect = { left: Math.round(left), top: Math.round(top) };   // for page -> app coords
         if (key === this._bounds) { return; }         // nothing moved — don't churn the compositor
         this._bounds = key;
         try {
-            this.pageView.setBounds(Math.round(r.left), Math.round(r.top),
-                                    Math.round(r.width), Math.round(r.height));
+            this.pageView.setBounds(Math.round(left), Math.round(top),
+                                    Math.round(right - left), Math.round(bottom - top));
         } catch (e) {}
+    },
+    /* Shrink the page to the area an edge overlay leaves free (null = use the whole placeholder). */
+    setOverlayClip: function (rect) {
+        var a = this._clip, b = rect || null;
+        var same = (!a && !b) || (a && b && a.left === b.left && a.top === b.top &&
+                                  a.width === b.width && a.height === b.height);
+        if (same) { return; }
+        this._clip = b;
+        this._bounds = "";                // geometry changed under us — force the next push through
+        this.scheduleBoundsSync();
     },
     resize: function () {
         this.scheduleBoundsSync();
