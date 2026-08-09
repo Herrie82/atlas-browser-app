@@ -200,9 +200,15 @@ enyo.kind({
     proto.atlasSelectIndex = function (index) {
         var tabs = this.atlasTabs || [];
         if (index < 0 || index >= tabs.length) { return; }
-        // selectViewByName instantiates a lazy view; only then can it be resolved and activated.
-        this.$.pane.selectViewByName(tabs[index].name);
+        // Set the active index FIRST: the pane patch below resolves the name "browser" to the active
+        // tab, and tab 0 is literally called "browser". Selecting it while the old index was still in
+        // place bounced the pane back to the previous tab while $.browser moved to this one — the URL
+        // then loaded into a tab that was not on screen.
         this.atlasActive = index;
+        // Prefer the instance (immune to the name mapping); fall back to the name for a lazy view.
+        var existing = this.atlasView(tabs[index]);
+        if (existing) { this.$.pane.selectView(existing); }
+        else { this.$.pane.selectViewByName(tabs[index].name); }
         for (var i = 0; i < tabs.length; i++) {
             this.atlasSetTabActive(tabs[i], i === index);
         }

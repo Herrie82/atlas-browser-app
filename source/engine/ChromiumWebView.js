@@ -238,6 +238,7 @@ enyo.kind({
              * leaving the tab blank if the early load was dropped. Ignore the blank state while a real
              * URL is outstanding, and re-issue the load once in case it never took. */
             if (self.isBlank(u) && !self.isBlank(self.requestedUrl)) {
+                /* falls through to the re-issue below */
                 if (!self._reissued) {
                     self._reissued = true;
                     var want = self.requestedUrl;
@@ -246,7 +247,6 @@ enyo.kind({
                 return;
             }
             if (u && u !== self.url) {
-                self.url = u;
                 // NOT doUrlRedirected: BrowserApp maps that event to openResource, which asks the
                 // system to open the URL in the default handler. On WPE it only fires for a scheme the
                 // engine cannot load; firing it per navigation makes every page load launch the
@@ -254,7 +254,7 @@ enyo.kind({
                 // from pageTitleChanged, which carries it.
                 if (self.isExternalScheme(u)) { self.doUrlRedirected(u); }
             }
-            self.pushTitle();
+            // NB: the address bar is driven by onPageUrl (main frame only), not from here.
         });
         on("did-fail-load", function (url, isMainFrame, error, errorCode) {
             self.loading = false;
@@ -299,7 +299,9 @@ enyo.kind({
     },
 
     pushTitle: function () {
-        var u = this.currentUrl();
+        // this.url is the MAIN FRAME location (onPageUrl); pageContents.url follows subframes too and
+        // would put tracker iframe URLs in the address bar and the history database.
+        var u = this.url || this.currentUrl();
         if (this.isBlank(u) && !this.isBlank(this.requestedUrl)) { return; }   // see did-finish-navigation
         this.doPageTitleChanged(this.title, u, this.canGoBack, this.canGoForward);
     },
@@ -357,6 +359,10 @@ enyo.kind({
             "      editable: editable" +
             "    };" +
             "  };" +
+            "  var postUrl = function () { ipc.post('url', { href: location.href, title: document.title }); };" +
+            "  postUrl();" +
+            "  window.addEventListener('popstate', postUrl, true);" +
+            "  window.addEventListener('hashchange', postUrl, true);" +
             "  var postHold = function (x, y, el) {" +
             "    ipc.post('hold', { x: x, y: y, info: hit(el || document.elementFromPoint(x, y)) });" +
             "  };" +
@@ -408,6 +414,7 @@ enyo.kind({
             this._ipc.on("tap", function (msg) { self.onPageTap(msg || {}); });
             this._ipc.on("scroll", function (msg) { self.onPageScroll(msg || {}); });
             this._ipc.on("hold", function (msg) { self.onPageHold(msg || {}); });
+            this._ipc.on("url", function (msg) { self.onPageUrl(msg || {}); });
         } catch (e) {
             enyo.log("[Atlas] input bridge unavailable: " + e);
         }
@@ -425,6 +432,17 @@ enyo.kind({
     },
     onPageScroll: function (msg) {
         this.doScrolledTo(msg.x || 0, msg.y || 0);
+    },
+    /* The main frame telling us where it actually is. pageContents.url follows SUBFRAME navigations
+     * too, so on an ad-heavy page the address bar (and history) filled up with tracker iframe URLs.
+     * The bridge only ever runs in the main frame, so this is authoritative. */
+    onPageUrl: function (msg) {
+        var href = msg && msg.href;
+        if (!href || this.isBlank(href)) { return; }
+        this.url = href;
+        if (msg.title) { this.title = msg.title; }
+        this.refreshNavState();
+        this.doPageTitleChanged(this.title, href, this.canGoBack, this.canGoForward);
     },
     /* Long press -> Atlas's context menu. openContextMenu reads pageX/pageY to place the popup and
      * the hit-test to choose between the link, image, edit and page menus. */
@@ -489,13 +507,29 @@ enyo.kind({
         this.setUrl(inUrl);
     },
     loadUrl: function (inUrl) {
-        var u = this.stripMarkers(inUrl);
+        var u = this.normalizeUrl(this.stripMarkers(inUrl));
         if (!u) { return; }
         this.requestedUrl = u;
         this._reissued = false;
         if (!this.pageContents) { this.pendingUrl = u; return; }
         try { this.pageContents.loadURL(u); } catch (e) { this.error("[Atlas] loadURL failed " + e); }
     },
+    /* Chromium's loadURL needs an absolute URL. Atlas hands the engine whatever the user typed once it
+     * decides the input is a URL rather than a search, and BrowserServer used to normalise a bare
+     * hostname for us — pass "vk.nl" to pageContents.loadURL and the view just stays on about:blank.
+     * Add the scheme here, conservatively: only for input that actually looks like a host. */
+    normalizeUrl: function (inUrl) {
+        var u = String(inUrl || "").trim();
+        if (!u) { return u; }
+        // "localhost:8080" parses as scheme "localhost" — a host:port is not a scheme.
+        if (/^[a-z0-9.\-]+:\d+([\/?#]|$)/i.test(u)) { return "http://" + u; }
+        if (/^[a-z][a-z0-9+.\-]*:/i.test(u)) { return u; }                 // already has a scheme
+        if (/^\/\//.test(u)) { return "https:" + u; }                      // protocol-relative
+        if (/^(localhost|\d{1,3}(\.\d{1,3}){3})(:\d+)?([\/?#]|$)/i.test(u)) { return "http://" + u; }
+        if (/^[^\s\/?#]+\.[^\s\/?#]+/.test(u)) { return "https://" + u; }  // host.tld[/path]
+        return u;                                                          // not host-like: leave alone
+    },
+
     /* atlas-simple: / atlas-private: are WPE backend markers (viewport-only rendering, private mode).
      * Chromium handles both natively — simple mode is meaningless and private is a partition — so the
      * markers are stripped rather than sent to the engine. */

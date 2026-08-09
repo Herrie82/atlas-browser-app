@@ -13,14 +13,6 @@
     window.atlasOpenCard = function (params) {
         var p = params || {};
         p._atlasInApp = 1;
-        // On the Chromium shell there is only ONE window (shell.createWindow returns nothing usable),
-        // so a "card" is an in-app tab. The tab layer owns __atlasOpenTab; until it exists, say so
-        // rather than calling enyo.windows.openWindow, which would open nothing.
-        if (window.__atlasChromium) {
-            if (typeof window.__atlasOpenTab === "function") { window.__atlasOpenTab(p); }
-            else if (window.enyo && enyo.log) { enyo.log("[Atlas] openCard ignored: no tab layer on the chromium host"); }
-            return;
-        }
         // Debounce: LunaCE delivers a button/menu tap as BOTH a tap and a click, firing the open twice
         // within a few ms -> two cards. Swallow a second call inside 700ms. The debounce state lives on a
         // stable object: prefer the shared root window, but FALL BACK to a module-static (window may resolve
@@ -38,6 +30,14 @@
         _atlasDebounce.__atlasLastOpen = now;   // mirror onto the static so it works even if rw differs next call
         if (rw) { rw.__atlasInAppOpenAt = now; }
         _atlasDebounce.__atlasInAppOpenAt = now;
+        // On the Chromium shell there is only ONE window (shell.createWindow returns nothing usable),
+        // so a "card" is an in-app tab. This sits AFTER the debounce above on purpose: a single press
+        // arrives as both a tap and a click, and branching before it opened two tabs every time.
+        if (window.__atlasChromium) {
+            if (typeof window.__atlasOpenTab === "function") { window.__atlasOpenTab(p); }
+            else if (window.enyo && enyo.log) { enyo.log("[Atlas] openCard ignored: no tab layer on the chromium host"); }
+            return;
+        }
         if (enyo.log) { enyo.log("[Atlas] openCard OPEN target=" + (p.target || "") + " rw=" + (rw ? 1 : 0)); }
         enyo.windows.openWindow("index.html", null, p);
     };
