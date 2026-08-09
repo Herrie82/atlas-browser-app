@@ -27,7 +27,16 @@ The `postinst` / `prerm` control scripts are **vendored in this directory** (`ip
 vendored copies are removed. Keep them in sync with [atlas-wpe-env](https://github.com/Herrie82/atlas-wpe-env)
 when the on-device install flow changes.
 
-Produces `org.webosports.app.atlas_<version>_all.ipk` (~56 MB). `build-ipk.sh` assembles:
+> **Which builder to use.** There are two. This one assembles the package from a *pre-built* engine
+> deploy set (`deploy-252-jitfix`). The releases actually shipped since 0.9.7 are built by
+> **[`atlas-wpe-env/build-ipk-atlas.sh`](https://github.com/Herrie82/atlas-wpe-env)** (see BUILDING.md
+> §7), which builds `BrowserServer-atlas` and the backend from source and overlays them onto a
+> reference deviceroot — that is what produced the ~99 MB `0.9.8` ipk. Use that one unless you
+> specifically have a `deploy-252-jitfix` tree to package. Note that 0.9.8's engine-hang recovery spans
+> this repo *and* BrowserServer *and* the boot wrapper, so an app-only package does not carry it.
+
+Produces `org.webosports.app.atlas_<version>_all.ipk` (~56 MB with the `deploy-252-jitfix` engine set;
+the from-source builder above yields ~99 MB, ~209 MB installed). `build-ipk.sh` assembles:
 
 - the app (this repo) under `usr/palm/applications/org.webosports.app.atlas/`
 - a bundled `deviceroot/` holding the **stripped** engine (`deploy-252-jitfix` set), the
@@ -39,6 +48,38 @@ Produces `org.webosports.app.atlas_<version>_all.ipk` (~56 MB). `build-ipk.sh` a
 > (`palm-package <appdir>`), which is handy for validating app changes. A **complete, installable**
 > browser ipk additionally needs the engine/BrowserServer/adapter artifacts from the two sibling repos
 > above — the preflight will tell you exactly which ones are missing.
+
+## Two distribution targets
+
+The same engine payload is packaged two ways, because a package manager and a hand install need opposite
+behaviour. Build whichever you are shipping (both live in [atlas-wpe-env](https://github.com/Herrie82/atlas-wpe-env)):
+
+    ./build-ipk-feed.sh         # -> $OUT/feed/org.webosports.app.atlas_<ver>_all.ipk
+    ./build-ipk-standalone.sh   # -> $OUT/standalone/...   (ATLAS_PKG_TARGET=feed|standalone)
+
+|                              | `feed` (Preware / WOSA Modernize) | `standalone` (WOQI, direct download, by hand) |
+|------------------------------|-----------------------------------|-----------------------------------------------|
+| `postinst`/`prerm` restart Luna | **no** — a batch installer runs *under* LunaSysMgr, so an inline restart kills it and abandons the rest of the dependency chain | **yes** — there is no installer to defer to, and the plugin is invisible until Luna reloads |
+| Restart declared as metadata | `PostInstallFlags`/`PostUpdateFlags`/`PostRemoveFlags` = `RestartLuna` | — |
+| `Depends:`                   | the feed's OpenSSL 1.1 package (`FEED_DEPENDS`, default `org.webosarchive.tls-updates`) — Atlas needs `/usr/lib/ssl11` for HTTPS | none — nothing would resolve it |
+
+`data.tar.gz` is **byte-identical between the two targets** (verified); only `control.tar.gz` differs, so
+a feed can index these bits without repacking. Payload mtimes are stamped from the app repo's HEAD commit
+(`SOURCE_DATE_EPOCH` overrides), so rebuilding the same commit reproduces the same payload md5 instead of
+churning it — but the stamp still moves release to release, which GStreamer needs in order to invalidate
+its cached plugin registry.
+
+**Preware reads the restart flags from the feed's `Packages` index, not from the ipk control**, so a feed
+must copy them into its own stanza; ours is there to be self-describing and to copy from. The display half
+of `Source` (`Feed`, `Category`, `Title`, `FullDescription`, `Icon`, `DeviceCompatibility`, `LastUpdated`)
+stays out of the ipk deliberately — that is per-feed catalog metadata.
+
+Either target can be forced to restart Luna at install/remove time with `ATLAS_POSTINST_RESTART_LUNA=1` /
+`ATLAS_PRERM_RESTART_LUNA=1`.
+
+Both targets ship **the GPU driver under all three names the engine asks for** (`libEGL.so.1`,
+`libGLESv2.so.2`, and the unversioned `libEGL.so` the vendor GLESv2 blob NEEDs). The build refuses to
+produce an ipk without them; `postinst` prefers the device's own driver and falls back to these.
 
 ## What is intentionally NOT bundled (dependencies on the device)
 
