@@ -6,6 +6,13 @@ APP=/media/cryptofs/apps/usr/palm/applications/org.webosports.app.atlas
 DR=$APP/deviceroot
 log() { echo "atlas-postinst: $*"; }
 
+# Packaging target — REWRITTEN AT BUILD TIME by build-ipk-atlas.sh (ATLAS_PKG_TARGET). Keep the literal
+# assignment on one line; the builder rewrites it with sed.
+#   standalone : we restart LunaSysMgr ourselves at the end (WOQI / by-hand installs, no installer to do it)
+#   feed       : we must NOT — Preware runs under LunaSysMgr and a mid-batch restart kills the installer;
+#                the feed declares PostInstallFlags=RestartLuna so it happens once, after the batch
+PKG_TARGET=standalone
+
 # 0. prerequisite: community OpenSSL 1.1 lives in /usr/lib/ssl11 (NOT bundled — we depend on it for TLS 1.3).
 [ -e /usr/lib/ssl11/libssl.so.1.1 ] || log "WARNING: /usr/lib/ssl11/libssl.so.1.1 missing — install the webOS OpenSSL 1.1 package first or HTTPS will not work."
 
@@ -14,10 +21,38 @@ log() { echo "atlas-postinst: $*"; }
 #    USB storage and must stay free of app internals. The boot wrapper derives its own $DR at runtime.
 log "preparing WPE engine (in place on cryptofs deviceroot)..."
 chmod 755 "$DR/wpe-252/BrowserServer-atlas" "$DR/atlas/BrowserServer" 2>/dev/null
-# GPU: the engine links versioned sonames; supply them from the device's real Adreno driver (not bundled).
-# cryptofs (like vfat) has no symlinks, so COPY the driver to the versioned names rather than symlink.
-cp -f /usr/lib/libEGL.so    "$DR/wpe-252/lib/libEGL.so.1"
-cp -f /usr/lib/libGLESv2.so "$DR/wpe-252/lib/libGLESv2.so.2"
+# GPU: stage the Adreno driver under every name the engine asks for. THREE names are needed, and a fresh
+# install that is missing any of them gets a browser that renders nothing:
+#   libEGL.so.1 / libGLESv2.so.2  - what libWPEBackend-atlas.so NEEDs (verified with readelf).
+#   libEGL.so (unversioned)       - what the vendor libGLESv2 blob itself NEEDs. Its SONAME is the
+#                                   unversioned "libEGL.so" too, so today this only resolves by luck:
+#                                   either the already-loaded libEGL.so.1 satisfies it under its SONAME,
+#                                   or the loader falls through to /usr/lib/libEGL.so. Stage it locally
+#                                   so neither piece of luck is required.
+# cryptofs (like vfat) has no symlinks, so COPY rather than symlink.
+#
+# Prefer the DEVICE's driver (it matches this device's GPU), but fall back to the copy bundled in the ipk
+# when /usr/lib has no unversioned name — the old unconditional `cp -f` failed silently in that case and
+# left the app dir with no GL at all, which is the 0.9.8 "missing libEGL.so.1 / libGLESv2.so.2" report.
+stage_gl() {   # stage_gl <device source> <destination>
+    if [ -f "$1" ]; then
+        cp -f "$1" "$2" || log "WARNING: could not copy $1 -> $2 (keeping whatever is there)"
+    elif [ -s "$2" ]; then
+        log "note: $1 absent on this device — keeping the bundled $(basename "$2")"
+    else
+        log "ERROR: no $1 and no bundled $(basename "$2") — the browser will not render"
+    fi
+}
+stage_gl /usr/lib/libEGL.so    "$DR/wpe-252/lib/libEGL.so.1"
+stage_gl /usr/lib/libGLESv2.so "$DR/wpe-252/lib/libGLESv2.so.2"
+# Unversioned alias, taken from what we just staged (NOT re-read from /usr/lib, so it is correct even on a
+# device that has no /usr/lib/libEGL.so).
+cp -f "$DR/wpe-252/lib/libEGL.so.1" "$DR/wpe-252/lib/libEGL.so" 2>/dev/null \
+    || log "WARNING: could not stage the unversioned libEGL.so"
+# Fail loud rather than leave the user with a browser that opens and renders nothing.
+for _gl in libEGL.so.1 libGLESv2.so.2 libEGL.so; do
+    [ -s "$DR/wpe-252/lib/$_gl" ] || log "ERROR: $_gl is MISSING from the engine lib dir — WebGL/rendering will fail"
+done
 # Bridge symlink: libWPEWebKit's baked install prefix is length-limited (can't hold the long cryptofs path),
 # so deploy prefix-patches it to the short /var/atlas252, which we point at the real engine dir on cryptofs.
 # (/var is ext3 → supports symlinks; cryptofs/vfat do not.) Removed once WebKit is rebuilt with the cryptofs
@@ -60,9 +95,27 @@ log "registering db8 kinds..."
 luna-send -n 1 palm://com.palm.configurator/run '{"types":["dbkinds"]}'       2>/dev/null
 luna-send -n 1 palm://com.palm.configurator/run '{"types":["dbpermissions"]}' 2>/dev/null
 
-# 6. start the engine + reload LunaSysMgr (picks up the new NPAPI plugin for application/x-atlas-browser).
-log "starting atlas engine + reloading LunaSysMgr..."
+# 6. start the engine, then reload LunaSysMgr so it picks up the new NPAPI plugin
+# (application/x-atlas-browser) — but only when we are the ones who should do it.
+#
+# In a FEED build we must not: Preware and other batch installers run UNDER LunaSysMgr, so restarting it
+# mid-batch kills the installer and abandons the rest of the dependency chain. Observed in the WOSA
+# Modernize feed — Atlas is a dependency of atlas-default-browser, which also pulls tls-updates, and the
+# restart fired the moment Atlas finished, so the rest never ran. There the feed declares
+# PostInstallFlags=RestartLuna and the installer does it once, after the whole batch.
+#
+# In a STANDALONE build there is no installer to defer to (WOQI, or extracting by hand), so we do it here
+# or the user is left with a browser that cannot render until they work out that Luna needs restarting.
+#
+# ATLAS_POSTINST_RESTART_LUNA=1 forces the restart regardless of target.
+log "starting atlas engine..."
 start atlas 2>/dev/null
-killall LunaSysMgr 2>/dev/null
+if [ "${ATLAS_POSTINST_RESTART_LUNA:-0}" = 1 ] || [ "$PKG_TARGET" = standalone ]; then
+    log "reloading LunaSysMgr (target=$PKG_TARGET) so it picks up the browser plugin..."
+    killall LunaSysMgr 2>/dev/null
+else
+    log "NOTE: LunaSysMgr must reload before the browser can render — your installer should do this"
+    log "      (PostInstallFlags=RestartLuna); otherwise restart Luna or reboot to finish."
+fi
 log "install complete."
 exit 0

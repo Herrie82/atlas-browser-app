@@ -12,6 +12,40 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
+/* The card's WebView config lives in a factory rather than inline in components[] because
+ * engine-restart recovery has to build a SECOND one. When BrowserServer dies, the existing plugin
+ * instance is unrecoverable: the framework's connect() runs the adapter's init -> connect, but that
+ * never re-establishes the link (measured on-device 2026-08-03 — 25 connect() attempts over 60s,
+ * no onConnected). A FRESH plugin instance connects to the new engine immediately, so recovery
+ * destroys the dead view and builds a new one from this. Keep it a function, not a shared object
+ * literal: enyo mutates the config it is handed. See engineDisconnected(). */
+function atlasWebViewConfig() {
+	return {name: "view", kind: "WebView", flex: 1, height: "100%",
+		onMousehold: "openContextMenu",
+		onPageTitleChanged: "pageTitleChanged",
+		onUrlRedirected: "doUrlRedirected",
+		onLoadStarted: "loadStarted",
+		onLoadProgress: "loadProgress",
+		onLoadStopped: "loadStopped",
+		onLoadComplete: "loadCompleted",
+		onFileLoad: "doFileLoad",
+		onError: "browserError",
+		onSingleTap: "browserTap",
+		onScrolledTo: "browserScrolled",
+		onAlertDialog: "showAlertDialog",
+		onConfirmDialog: "showConfirmDialog",
+		onPromptDialog: "showPromptDialog",
+		onSSLConfirmDialog: "showSSLConfirmDialog",
+		onUserPasswordDialog: "showUserPasswordDialog",
+		onNewPage: "openNewCardWithIdentifier",
+		onPrint: "doPrint",
+		onEditorFocusChanged: "editorFocusChanged",
+		onConnected: "engineConnected",
+		onDisconnected: "engineDisconnected",
+		minFontSize: 2
+	};
+}
+
 enyo.kind({
 	name: "Browser",
 	kind: enyo.VFlexBox,
@@ -68,28 +102,7 @@ enyo.kind({
 			onTranslate: "actionbarTranslate"
 		},
 		{name: "findDialog", kind: "FindBar", showing: false, onFind: "find", onGoToPrevious: "goToPrevious", onGoToNext: "goToNext"},
-		{name: "view", kind: "WebView", flex: 1, height: "100%",
-			onMousehold: "openContextMenu",
-			onPageTitleChanged: "pageTitleChanged",
-			onUrlRedirected: "doUrlRedirected",
-			onLoadStarted: "loadStarted",
-			onLoadProgress: "loadProgress",
-			onLoadStopped: "loadStopped",
-			onLoadComplete: "loadCompleted",
-			onFileLoad: "doFileLoad",
-			onError: "browserError",
-			onSingleTap: "browserTap",
-			onScrolledTo: "browserScrolled",
-			onAlertDialog: "showAlertDialog",
-			onConfirmDialog: "showConfirmDialog",
-			onPromptDialog: "showPromptDialog",
-			onSSLConfirmDialog: "showSSLConfirmDialog",
-			onUserPasswordDialog: "showUserPasswordDialog",
-			onNewPage: "openNewCardWithIdentifier",
-			onPrint: "doPrint",
-			onEditorFocusChanged: "editorFocusChanged",
-			minFontSize: 2,
-		},
+		atlasWebViewConfig(),
 		{kind: "FindBar", showing: false, onFind: "find", onGoToPrevious: "goToPrevious", onGoToNext: "goToNext"},
 		{name: "context", kind: "BrowserContextMenu", onItemClick: "contextItemClick"},
 		{name: "dialog", kind: "VerticalAcceptCancelPopup", cancelCaption: "", components: [
@@ -176,6 +189,13 @@ enyo.kind({
 		if (window.PalmSystem) {
 			this.$.view.setIdentifier(enyo.windowParams.webviewId);
 		}
+	},
+	destroy: function() {
+		// Don't leave an engine-recovery retry ticking against a torn-down view (the card can be
+		// swiped away mid-recovery).
+		if (this._engineTimer) { clearTimeout(this._engineTimer); this._engineTimer = null; }
+		this._engineDown = false;
+		this.inherited(arguments);
 	},
 	resize: function() {
 		this.$.actionbar.resize();
@@ -267,7 +287,31 @@ enyo.kind({
 		}
 		this.$.view.setUrl(loadUrl);
 		this.$.actionbar.setLoading(true);
+		// Show the resolving slice IMMEDIATELY. Between hitting go and the engine's first progress
+		// report there is a real pause — the URL is still being completed and resolved (typing
+		// "www.example.com" walks through http:// then https://), which on this hardware can take a
+		// couple of seconds. setLoading alone only makes the bar VISIBLE; it sits at 0 and looks
+		// stuck. Parking it at RESOLVE_PROGRESS says "something is happening" straight away.
+		this._navigating = false;   // user asked for a new page: restart the bar even mid-load
+		this.beginProgress();
 		this.$.actionbar.setUrl(this.url);
+	},
+	//* Bottom slice of the progress bar, reserved for URL completion/resolution before the engine
+	//* reports anything. Real load progress is scaled into the remainder (see loadProgress).
+	RESOLVE_PROGRESS: 5,
+	/**
+	 * Start the progress bar for a NEW navigation, parked at the resolving slice.
+	 *
+	 * Guarded by _navigating because a single navigation fires loadStarted repeatedly - typing
+	 * "example.com" redirects www -> http -> https, and each hop starts a load. Without the guard the
+	 * bar slides backwards to 5% on every hop (observed: 5, 15, 5, 10, 15...). Only an actual new
+	 * navigation restarts it; redirects keep climbing from where they were.
+	 */
+	beginProgress: function() {
+		if (this._navigating) { return; }
+		this._navigating = true;
+		this._lastProgress = this.RESOLVE_PROGRESS;
+		this.$.actionbar.setProgress(this.RESOLVE_PROGRESS);
 	},
 	searchPreferencesChanged: function() {
 		this.$.actionbar.setSearchPreferences(this.searchPreferences);
@@ -932,22 +976,30 @@ enyo.kind({
 	stopClick: function() {
 		this.log();
 		this.$.view.callBrowserAdapter("stopLoad");
+		this._navigating = false;
 		this.$.actionbar.setProgress(0);
 	},
 	loadStarted: function() {
 	   this.hideSelectionUI();
-	   this._lastProgress = 0;
 	   if (this._timeoutHandle != null) {
 		   clearTimeout(this._timeoutHandle);
 		   this._timeoutHandle = null;
 	   }
 	   this.isErrorLoadFailed = false;
 	   this.$.actionbar.setLoading(true);
+	   // Covers loads we did not start ourselves (tapping a link). No-op for the redirect hops of a
+	   // navigation already in flight, so the bar never slides backwards.
+	   this.beginProgress();
 	},
 	loadProgress: function(inSender, inProgress) {
-		if (this._lastProgress < inProgress) {
-			this.$.actionbar.setProgress(inProgress);
-			this._lastProgress = inProgress;
+		// Scale the engine's 0-100 into the slice above RESOLVE_PROGRESS, so the bar continues from
+		// where the resolving slice left it instead of snapping backwards to a low real percentage.
+		// Thresholds below stay on the RAW value — they are about load state, not bar position.
+		var scaled = this.RESOLVE_PROGRESS +
+			Math.round(inProgress * (100 - this.RESOLVE_PROGRESS) / 100);
+		if (this._lastProgress < scaled) {
+			this.$.actionbar.setProgress(scaled);
+			this._lastProgress = scaled;
 
 			if (inProgress === 100) {
 				this._timeoutHandle = setTimeout(enyo.hitch(this, "clearProgress"), 1000);
@@ -970,9 +1022,113 @@ enyo.kind({
 		if (this._lastProgress <= 50) this.isQuickRedirect = true;
 	},
 	clearProgress: function() {
+		this._navigating = false;   // next loadStarted is a genuinely new navigation
 		this.$.actionbar.setProgress(0);
 		this.$.actionbar.setLoading(false);
 		this._timeoutHandle = null;
+	},
+	/* ---- Engine-restart recovery -------------------------------------------------------------
+	 * The GPU wedge (atlas-wpe-env#3) parks BrowserServer's main thread in a futex wait. BS's own
+	 * deadlock watchdog eventually aborts it and upstart respawns a fresh engine — but the CARD
+	 * does not come back on its own: the adapter's yap socket died with the old BS and nothing
+	 * re-establishes it, so the card sits dead (verified on-device 2026-08-03: a relaunch into a
+	 * stale card spawns no WebProcess and logs nothing) until the user closes and reopens it.
+	 *
+	 * Recovery RELOADS THE CARD'S DOCUMENT. Nothing short of that works — measured on-device
+	 * 2026-08-03, against a real engine restart:
+	 *   - view.connect() (the framework's reconnect path): 25 attempts over 60s, no onConnected.
+	 *   - destroying the WebView and building a fresh one in the same document: same, 18 attempts.
+	 *   - a brand-new CARD: connects and renders immediately.
+	 * So the plugin binding is per-document and cannot be re-established in place. Replacing the
+	 * card was the other candidate, but a WPE-hosted card cannot close itself (see the OAuth
+	 * self-dismiss note in BrowserApp.checkOAuthRedirect), so that would strand a dead card next to
+	 * the new one. Reloading keeps the card, its position in the stack, and its identity.
+	 *
+	 * The reload is delayed because a respawn takes ~12s (the boot wrapper waits for LunaSysMgr,
+	 * sleeps 3s, then the engine initialises); reloading sooner just lands in a still-dead engine.
+	 * Jittered so that several open cards recovering at once don't reload in lockstep.
+	 */
+	ENGINE_RECOVER_MS: 15000,
+	//* window.name survives a document reload (localStorage would be shared by every card), so it
+	//* carries both the page to restore and the "we already tried" stamp that stops a reload loop.
+	ENGINE_STAMP_PREFIX: "atlas-engine-recover:",
+	ENGINE_STAMP_FRESH_MS: 120000,   // how long a stashed URL is still worth restoring
+	ENGINE_STAMP_GUARD_MS: 90000,    // reloading again inside this window means it did not work
+	engineDisconnected: function() {
+		if (this._engineDown) { return; }   // the adapter can report the drop more than once
+		this._engineDown = true;
+		this.log("[Atlas] engine disconnected — card reload scheduled");
+		this.engineBanner($L("Atlas hung - restarting..."));
+		// The dead load will never finish; stop pretending it might.
+		this._navigating = false;
+		this.$.actionbar.setProgress(0);
+		this.$.actionbar.setLoading(false);
+		var delay = this.ENGINE_RECOVER_MS + Math.floor(Math.random() * 3000);
+		this._engineTimer = setTimeout(enyo.hitch(this, "engineRecover"), delay);
+	},
+	engineRecover: function() {
+		this._engineTimer = null;
+		if (!this._engineDown) { return; }   // engine came back on its own (see engineConnected)
+
+		// Already reloaded once for this outage? Then reloading again will not help either — the
+		// engine is down for a reason we cannot fix from here. Say so instead of looping forever.
+		var stamp = this.engineStamp();
+		var now = (new Date()).getTime();
+		if (stamp && (now - stamp.at) < this.ENGINE_STAMP_GUARD_MS) {
+			this.log("[Atlas] engine still down after a reload — giving up");
+			this._engineDown = false;
+			this.engineBanner($L("Close and re-open Atlas. Engine died."));
+			return;
+		}
+
+		this.log("[Atlas] engine recovery: reloading card for " + (this.url || "(no url)"));
+		try {
+			window.name = this.ENGINE_STAMP_PREFIX + now + ":" + (this.url || "");
+		} catch (e) {}
+		window.location.reload();
+	},
+	//* Parse the recovery stamp left in window.name by engineRecover; null when absent/malformed.
+	engineStamp: function() {
+		var n = "";
+		try { n = window.name || ""; } catch (e) { return null; }
+		if (n.indexOf(this.ENGINE_STAMP_PREFIX) !== 0) { return null; }
+		var rest = n.substring(this.ENGINE_STAMP_PREFIX.length);
+		var sep = rest.indexOf(":");
+		if (sep < 0) { return null; }
+		var at = parseInt(rest.substring(0, sep), 10);
+		if (!at) { return null; }
+		return {at: at, url: rest.substring(sep + 1)};
+	},
+	engineConnected: function() {
+		if (!this._engineDown) { return; }   // ordinary first connect when the card is created
+		// The engine came back before our reload fired (a fast respawn, or it never really went).
+		this._engineDown = false;
+		if (this._engineTimer) { clearTimeout(this._engineTimer); this._engineTimer = null; }
+		this.log("[Atlas] engine reconnected without a reload — reloading page");
+		this.engineBanner($L("Atlas restarted - reloading..."));
+		// The new engine holds no page for this card, so load it again. Clear the view's cached url
+		// first: setUrl to the value it already holds is a no-op, which would skip the reload.
+		if (this.url) {
+			this.$.view.url = "";
+			this.urlChanged();
+		}
+	},
+	/* One banner per event, not one per open card: every card's adapter reports the same drop, and
+	 * three stacked "engine restarting" banners is noise. Dedupe on the shared root window (the same
+	 * cross-card state trick AtlasEngineOverride uses for the open-card debounce). */
+	engineBanner: function(inMessage) {
+		var now = (new Date()).getTime();
+		var store = null;
+		try { store = enyo.windows.getRootWindow(); } catch (e) {}
+		if (store) {
+			if (store.__atlasEngineBannerAt && (now - store.__atlasEngineBannerAt) < 4000 &&
+				store.__atlasEngineBannerMsg === inMessage) {
+				return;
+			}
+			store.__atlasEngineBannerAt = now;
+			store.__atlasEngineBannerMsg = inMessage;
+		}
+		enyo.windows.addBannerMessage(inMessage, enyo.json.stringify({dontLaunch: true}));
 	},
 	browserError: function(inSender, inErrorCode, inMsg) {
 		
