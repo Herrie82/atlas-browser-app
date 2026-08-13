@@ -149,6 +149,14 @@ browsing; **start page** bookmark grid with launcher-style drag-to-reorder; **re
 - **In-app tabs** with a tab strip, since the shell gives the app a single window. Background tabs
   suspend their DOM and media.
 - **Chromium's own text selection and handles** — the WPE marker/popover UI is not used.
+- **Find-in-page with a match count and highlight-all**, done by a script injected into the page: it
+  walks the text nodes and paints matches with the CSS Custom Highlight API, so unlike a `<mark>`-based
+  highlighter it never mutates the page DOM. Next/previous wrap around, and the count appears in the
+  find bar (the WPE host reports no count, so there the counter stays empty).
+- **HTML fullscreen** — a page going fullscreen takes the whole window and the tab strip gets out of
+  the way, instead of staying letterboxed inside the content area.
+- **Favicons straight from the page**, since the UI page is itself Chromium and can load them; the WPE
+  host has to have the engine download them to the app bundle first.
 - Private tabs get a throwaway Chromium partition.
 - Page dialogs, HTTP auth and the long-press context menu come from the shell's own events.
 - `html5test.co` scores **574/588** on this engine (WPE scores ~535).
@@ -164,12 +172,36 @@ browsing; **start page** bookmark grid with launcher-style drag-to-reorder; **re
 
 **LuneOS / Chromium**
 
-- No find-in-page, no print, and no JavaScript-enable or cookie-policy toggles — `pageContents` exposes
-  no equivalents.
-- Atlas's own selection markers and popover are unwired; they are fed by the WPE backend's
-  `selectionBounds` messages, which have no counterpart here.
-- Scroll reporting is window-level: a page that scrolls an inner element reports no offset.
+These are limitations of the *engine*, not of the app — each needs a `webruntime` patch, so they are
+batched into one rebuild rather than fixed piecemeal:
+
+Some of these are fixed by the LuneOS `webruntime` patch
+(`meta-luneos/recipes-webos-ose/chromium/files/0009-browser_shell-*.patch`), which adds permission
+delivery, find-in-page, and the JavaScript and cookie switches. Atlas feature-detects each one, so the
+same build runs on a patched or an unpatched engine.
+
+- **No print.** `pageContents` has no print entry point, and — unlike the other gaps — this is not a
+  matter of exposing something that already exists: `neva` builds no printing stack at all (no
+  `PrintRenderFrameHelper` in the renderer, no printing dependency in any `BUILD.gn`). Adding it is a
+  component integration spanning renderer, browser and mojo, not an API exposure, so it is deliberately
+  left out of the patch.
+- **No selection reporting.** Atlas's own selection markers and popover are fed by the WPE backend's
+  `selectionBounds` messages, which have no counterpart here — and no clean Chromium API to build one
+  from. Chromium draws its own drag handles instead, so the loss is cosmetic parity rather than
+  function.
+- **Permission prompts need the patch.** On a stock engine, camera, microphone, geolocation and
+  notification requests never reach the app: `PageContents::RequestMediaAccessPermission` goes straight
+  to the capture dispatcher without calling the delegate, nothing ever populates
+  `media_access_requests_`, so the `permissionrequest` event never fires and `AckPermission` only ever
+  logs "Not found request". This is not Atlas-specific — enactbrowser registers a `permissionrequest`
+  listener that has never once been called.
+- Without the patch, find-in-page is done **in the page** rather than by the engine (see below), so its
+  match count does not cover cross-origin iframes.
 - While a popup is open the page area is blanked rather than clipped (edge drawers *are* clipped).
+
+Note that Chromium flags can be tried on-device *without* a rebuild: `run_browser_shell` sources
+`${CACHE_DIR}/extra_conf` (usually `/home/wam/.cache/extra_conf`) after building `CHROME_FLAGS`, so
+appending to that variable there takes effect on the next launch.
 
 ## Roadmap
 
@@ -180,7 +212,8 @@ browsing; **start page** bookmark grid with launcher-style drag-to-reorder; **re
 - Autofill engine hooks: auto-capture on submit and auto-fill on focus (storage and UI are done).
 - Expand the tracker/beacon blocklist; optional data-saver (defer images).
 - Scrolling perf: async axis-event scroll is done; strip-readback optimization pending.
-- Chromium host: find-in-page via injected script, per-element scroll reporting, and merging the
+- Chromium host: print, which needs a printing stack built into `neva` before any browser_shell API
+  can expose it; and selection-bounds reporting for Atlas's own marker UI. Then merging the
   `chromium-engine` branch once it has had wider use.
 
 ## Copyright and License

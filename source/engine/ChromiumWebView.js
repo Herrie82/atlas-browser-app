@@ -140,7 +140,14 @@ enyo.kind({
         setTimeout(tick, delays[0]);
     },
     syncBounds: function () {
-        if (!this.pageView || !this.hasNode()) { return; }
+        if (!this.pageView) { return; }
+        /* Fullscreen is decided before the placeholder is measured: the chrome is being hidden around
+         * us, so the placeholder's rect is mid-relayout and would fight the window rect we want. */
+        if (this._fullscreen) {
+            this.pushBounds(0, 0, window.innerWidth || 0, window.innerHeight || 0);
+            return;
+        }
+        if (!this.hasNode()) { return; }
         var r = this.node.getBoundingClientRect();
         if (r.width <= 0 || r.height <= 0) { return; }
         var left = r.left, top = r.top, right = r.right, bottom = r.bottom;
@@ -154,14 +161,17 @@ enyo.kind({
             bottom = Math.min(bottom, c.top + c.height);
             if (right - left <= 0 || bottom - top <= 0) { return; }
         }
-        var key = [Math.round(left), Math.round(top), Math.round(right - left), Math.round(bottom - top)].join(",");
-        this._rect = { left: Math.round(left), top: Math.round(top) };   // for page -> app coords
+        this.pushBounds(left, top, right - left, bottom - top);
+    },
+    pushBounds: function (left, top, width, height) {
+        left = Math.round(left); top = Math.round(top);
+        width = Math.round(width); height = Math.round(height);
+        if (width <= 0 || height <= 0) { return; }
+        var key = [left, top, width, height].join(",");
+        this._rect = { left: left, top: top };        // for page -> app coords
         if (key === this._bounds) { return; }         // nothing moved — don't churn the compositor
         this._bounds = key;
-        try {
-            this.pageView.setBounds(Math.round(left), Math.round(top),
-                                    Math.round(right - left), Math.round(bottom - top));
-        } catch (e) {}
+        try { this.pageView.setBounds(left, top, width, height); } catch (e) {}
     },
     /* Shrink the page to the area an edge overlay leaves free (null = use the whole placeholder). */
     setOverlayClip: function (rect) {
@@ -228,13 +238,18 @@ enyo.kind({
         on("dom-ready", function () { self.installInputBridge(); });
         on("did-start-loading", function () {
             self.loading = true;
+            self.faviconUrl = "";        // the old page's icon must not survive into the new one
             self.doLoadStarted();
         });
-        // "laod-progress-changed" is the shell's spelling, not a typo here. The payload has varied by
-        // release, so accept a bare number, {progress}, or an event-ish object, and normalise to 0-100.
-        on("laod-progress-changed", function (ev) {
-            self.doLoadProgress(self.readProgress(ev));
-        });
+        /* The event is "load-progress-changed" (browser_shell_page_contents.cc, both the 108 and 120
+         * trees). Atlas used to listen for "laod-..." on the belief that the shell misspelled it, so the
+         * progress bar never moved. The misspelling is kept as a second registration in case an older
+         * webruntime really did emit it — a name nothing emits simply never fires. The payload has
+         * varied by release, so accept a bare number, {progress}, or an event-ish object, and normalise
+         * to 0-100. */
+        var onProgress = function (ev) { self.doLoadProgress(self.readProgress(ev)); };
+        on("load-progress-changed", onProgress);
+        on("laod-progress-changed", onProgress);
         on("did-stop-loading", function () {
             self.loading = false;
             self.refreshNavState();
@@ -282,11 +297,38 @@ enyo.kind({
             if (isMainFrame === false) { return; }      // subresource failure is not a page error
             self.doError(errorCode, error, url);
         });
-        on("newwindow", function (ev) {
-            // Atlas answers this by opening a card; the tab layer turns that into a tab here.
-            var target = self.readString(ev && (ev.targetUrl || ev.url)) || "";
-            self.doNewPage(target || ("atlas-new-" + (new Date()).getTime()));
+        /* The shell emits newwindow with TWO arguments: a PageContents handle for the popup it has
+         * already created, and a windowInfo record. The URL lives on the SECOND one
+         * (windowInfo.targetUrl); Atlas used to read targetUrl off the handle, where it does not exist,
+         * so every popup and every target=_blank link opened a blank tab.
+         *
+         * The handle cannot be adopted: PageView always constructs its own pageContents (see
+         * BrowserShellPageView::ConstructorCallback) and there is no way to hand it an existing one. So
+         * the popup is closed and re-opened as a normal tab on its target URL. A popup that carries no
+         * URL — window.open() then document.write() — cannot survive that, and is dropped rather than
+         * left as an invisible live page costing memory. */
+        on("newwindow", function (handle, info) {
+            var target = self.readString(info && info.targetUrl) || "";
+            var blocked = !!(info && info.popupBlocked) ||
+                          (self.blockPopups && !(info && info.userGesture));
+            try { if (handle && handle.closeNow) { handle.closeNow(); } } catch (e) {}
+            if (blocked || !target) {
+                if (!target) { self.unsupported("newwindow without a target URL"); }
+                return;
+            }
+            self.openInNewTab(target);
         });
+        /* target=_blank and window.open handled by the browser side rather than the renderer arrive
+         * here instead of through newwindow. */
+        on("open-url-from-tab", function (openUrlInfo) {
+            var target = self.readString(openUrlInfo && openUrlInfo.targetUrl) || "";
+            if (target) { self.openInNewTab(target); }
+        });
+        /* A hung renderer. This is a TOP-LEVEL event, not a dialog messageType — Atlas used to look for
+         * it in the dialog switch, where it could never appear. Atlas has no "page is hung" UI, so just
+         * note it; Chromium recovers on its own or the user closes the tab. */
+        on("unresponsive", function () { self.log("[Atlas] renderer unresponsive: " + self.url); });
+        on("responsive", function () { self.log("[Atlas] renderer responsive again: " + self.url); });
         on("dialog", function (messageType, messageText, controller, defaultPromptText) {
             self.onEngineDialog(messageType, messageText, controller, defaultPromptText);
         });
@@ -300,23 +342,120 @@ enyo.kind({
         });
         on("zoomchange", function () { /* zoomFactor is read back on demand */ });
         on("close", function () { self.doError(0, "closed", self.url); });
+
+        /* A page going fullscreen (a video tapping the fullscreen button) only resizes ITS OWN layout —
+         * the native view keeps the rectangle Atlas gave it, so "fullscreen" video stayed letterboxed
+         * inside the area between the tab strip and the toolbar. Take over the whole window while it
+         * lasts, and put the chrome back afterwards. */
+        on("enter-html-fullscreen", function () { self.setPageFullscreen(true); });
+        on("leave-html-fullscreen", function () { self.setPageFullscreen(false); });
+
+        /* Favicons. The WPE host cannot fetch these itself — LunaSysMgr's ancient WebKit has no modern
+         * TLS — so the backend downloads them into the app bundle and Atlas reads a relative path. Here
+         * the UI page IS Chromium, so it can just load the remote URL the page advertises. */
+        on("did-update-favicon-url", function (favicons) { self.onFavicons(favicons); });
+
+        /* Only ever fires for getUserMedia, and only on an engine that actually reports it: in the
+         * stock LuneOS webruntime PageContents::RequestMediaAccessPermission goes straight to the
+         * capture dispatcher and never calls the delegate, so nothing emits this today. Wiring it now
+         * costs nothing and makes camera/mic prompts work the moment the engine does — and note the
+         * injection auto-DENIES when there is no listener, so having one is strictly better. */
+        on("permissionrequest", function (req) { self.onPermissionRequest(req || {}); });
+
+        /* Engine-side find results, on a patched webruntime. The engine reports progressively as it
+         * scans, so only the final report carries a trustworthy total. */
+        on("found-in-page", function (r) {
+            if (!r || !r.finalUpdate) { return; }
+            self.reportFindResult({
+                count: r.numberOfMatches || 0,
+                index: r.activeMatchOrdinal || 0,
+                query: self._findQuery || ""
+            });
+        });
+    },
+
+    /* Atlas's chrome is DOM in the UI page; the page is a native view above it. Going fullscreen is
+     * therefore not a CSS change but a bounds change, plus hiding the app's own furniture. */
+    setPageFullscreen: function (on) {
+        this._fullscreen = !!on;
+        var app = window.__atlasApp;
+        if (app && app.$ && app.$.tabStrip) {
+            if (on) { this._stripWasShowing = app.$.tabStrip.showing; }
+            try { app.$.tabStrip.setShowing(on ? false : !!this._stripWasShowing); } catch (e) {}
+        }
+        this._bounds = "";                 // the rect is computed differently now — force a push
+        this.scheduleBoundsSync();
+    },
+    /* Called by Atlas's Back gesture so the page leaves fullscreen instead of navigating away. Returns
+     * true when it consumed the gesture. */
+    exitFullscreenIfActive: function () {
+        if (!this._fullscreen) { return false; }
+        try { if (this.pageContents && this.pageContents.exitFullscreen) { this.pageContents.exitFullscreen(); } } catch (e) {}
+        this.setPageFullscreen(false);
+        return true;
+    },
+
+    /* Pick the largest advertised icon and hand it to Atlas as an absolute URL. */
+    onFavicons: function (favicons) {
+        var list = favicons || [], best = "", bestArea = -1;
+        for (var i = 0; i < list.length; i++) {
+            var f = list[i];
+            if (!f || !f.url) { continue; }
+            var area = 0, sizes = f.sizes || [];
+            for (var k = 0; k < sizes.length; k++) {
+                area = Math.max(area, (sizes[k].width || 0) * (sizes[k].height || 0));
+            }
+            if (area > bestArea) { bestArea = area; best = f.url; }
+        }
+        if (best) { this.faviconUrl = best; }
+    },
+
+    /* Route a camera/mic request through Atlas's confirm dialog. pendingDialog is a single slot, so a
+     * request arriving while a page dialog is up is denied rather than silently stealing its response. */
+    onPermissionRequest: function (req) {
+        var request = req.request;
+        if (!request) { return; }
+        var deny = function () { try { request.deny(); } catch (e) {} };
+        if (this.pendingDialog) { deny(); return; }
+        this.pendingDialog = {
+            ok: function () { try { request.allow(); } catch (e) {} },
+            cancel: deny
+        };
+        this.doConfirmDialog(this.permissionPrompt(req.permission));
+    },
+    permissionPrompt: function (permission) {
+        var host = (String(this.url || "").match(/^https?:\/\/([^\/]+)/i) || [])[1] || $L("This site");
+        switch (String(permission)) {
+        case "media":
+        case "videoCapture":  return enyo.macroize($L("Allow {$host} to use your camera?"), {host: host});
+        case "audioCapture":  return enyo.macroize($L("Allow {$host} to use your microphone?"), {host: host});
+        case "geolocation":   return enyo.macroize($L("Allow {$host} to access your location?"), {host: host});
+        case "notifications": return enyo.macroize($L("Allow {$host} to show notifications?"), {host: host});
+        default:              return enyo.macroize($L("Allow {$host} to use \"{$what}\"?"), {host: host, what: String(permission || "")});
+        }
     },
 
     onEngineDialog: function (messageType, messageText, controller, defaultPromptText) {
         this.pendingDialog = controller || null;
         var msg = this.readString(messageText) || "";
+        /* The only types the shell ever sends are alert/confirm/prompt (app_runtime_js_dialog_manager.cc).
+         * HTTP auth is NOT one of them — it arrives as the separate "login" event — and neither is
+         * "unresponsive", which is its own top-level event. Both used to have dead cases here. */
         switch (String(messageType)) {
         case "alert":       this.doAlertDialog(msg); break;
         case "confirm":     this.doConfirmDialog(msg); break;
         case "prompt":      this.doPromptDialog(msg, defaultPromptText || ""); break;
-        case "auth":        this.doUserPasswordDialog(msg); break;
-        case "unresponsive":
-            // Not a page dialog — Atlas has no "page is hung" UI, so let the page keep going.
-            if (controller && controller.ok) { try { controller.ok(); } catch (e) {} }
-            this.pendingDialog = null;
-            break;
         default:            this.doAlertDialog(msg); break;
         }
+    },
+
+    /* Open a URL in a new tab. doNewPage cannot carry one: Atlas maps that event to
+     * openNewCardWithIdentifier, whose argument is a webview IDENTIFIER, not a URL — passing the URL
+     * there gave the new card an identifier-shaped URL and no page to load. atlasOpenCard is the
+     * app-wide "open a card" entry point and takes a target; the tab layer turns it into a tab. */
+    openInNewTab: function (url) {
+        if (window.atlasOpenCard) { window.atlasOpenCard({ target: url }); }
+        else { this.doNewPage(url); }
     },
 
     pushTitle: function () {
@@ -414,18 +553,125 @@ enyo.kind({
             "    if (e.target && e.target.tagName === 'IMG') { img = e.target.src || ''; }" +
             "    ipc.post('tap', { x: e.clientX, y: e.clientY, link: link, img: img });" +
             "  }, true);" +
-            "  var pending = false;" +
+            /* Scroll reporting. The listener is on the window in the CAPTURE phase, so it also sees a
+             * scroll inside an element — but window.pageYOffset is 0 for those, which is why a page
+             * that scrolls an inner div (a mail client, an infinite feed) reported no movement at all.
+             * Report the offsets of whatever actually scrolled. */
+            "  var pending = false, target = null;" +
             "  var report = function () {" +
             "    pending = false;" +
-            "    ipc.post('scroll', { x: window.pageXOffset || 0, y: window.pageYOffset || 0 });" +
+            "    var t = target;" +
+            "    var el = (t && t.nodeType === 1) ? t : null;" +
+            "    ipc.post('scroll', el ? { x: el.scrollLeft || 0, y: el.scrollTop || 0, inner: true }" +
+            "                          : { x: window.pageXOffset || 0, y: window.pageYOffset || 0 });" +
             "  };" +
-            "  window.addEventListener('scroll', function () {" +
+            "  window.addEventListener('scroll', function (e) {" +
+            "    target = e.target;" +
             "    if (pending) { return; }" +          /* coalesce to one report per frame */
             "    pending = true;" +
-            "    (window.requestAnimationFrame || window.setTimeout)(report, 16);" +
+            /* Called as a bare reference these lose their receiver; rAF throws "Illegal invocation" if
+             * the page is ever in strict mode. Call them on window explicitly. */
+            "    if (window.requestAnimationFrame) { window.requestAnimationFrame(report); }" +
+            "    else { window.setTimeout(report, 16); }" +
             "  }, true);" +
+            this.findEngineScript() +
             "})();";
         this.runScript(js);
+    },
+
+    /* Find-in-page, in the page. pageContents has no find API at all, so Atlas used to call bare
+     * window.find(): no direction, no wrap, no count, and no way to highlight the other matches.
+     *
+     * This walks the text nodes and paints matches with the CSS Custom Highlight API — Chromium has had
+     * it since 105, and unlike wrapping matches in <mark> elements it does NOT touch the DOM, so it
+     * cannot break a page's own scripts or layout. The match count comes back over the same IPC channel
+     * the taps and scrolls use. */
+    findEngineScript: function () {
+        return "" +
+            "  var hl = { ranges: [], index: -1, query: '' };" +
+            "  var supported = !!(window.CSS && CSS.highlights && window.Highlight);" +
+            "  if (supported && !document.getElementById('__atlasFindStyle')) {" +
+            "    var st = document.createElement('style');" +
+            "    st.id = '__atlasFindStyle';" +
+            "    st.textContent = '::highlight(atlas-find){background:#ffe066;color:#000}' +" +
+            "                     '::highlight(atlas-find-current){background:#ff9f1a;color:#000}';" +
+            "    (document.head || document.documentElement).appendChild(st);" +
+            "  }" +
+            "  var clear = function () {" +
+            "    hl.ranges = []; hl.index = -1; hl.query = '';" +
+            "    if (supported) { CSS.highlights['delete']('atlas-find'); CSS.highlights['delete']('atlas-find-current'); }" +
+            "  };" +
+            /* Collect visible text nodes, skipping the ones whose content is never rendered. */
+            "  var collect = function () {" +
+            "    var nodes = [], text = '';" +
+            "    var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {" +
+            "      acceptNode: function (n) {" +
+            "        if (!n.nodeValue || !n.nodeValue.length) { return NodeFilter.FILTER_REJECT; }" +
+            "        var p = n.parentNode, tag = p && p.tagName;" +
+            "        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TEXTAREA') {" +
+            "          return NodeFilter.FILTER_REJECT;" +
+            "        }" +
+            "        return NodeFilter.FILTER_ACCEPT;" +
+            "      }" +
+            "    });" +
+            "    var n;" +
+            "    while ((n = w.nextNode())) { nodes.push({ node: n, start: text.length }); text += n.nodeValue; }" +
+            "    return { nodes: nodes, text: text };" +
+            "  };" +
+            /* Map an offset in the flattened text back to (node, offset). */
+            "  var locate = function (nodes, pos) {" +
+            "    var lo = 0, hi = nodes.length - 1, best = 0;" +
+            "    while (lo <= hi) {" +
+            "      var mid = (lo + hi) >> 1;" +
+            "      if (nodes[mid].start <= pos) { best = mid; lo = mid + 1; } else { hi = mid - 1; }" +
+            "    }" +
+            "    return { node: nodes[best].node, offset: pos - nodes[best].start };" +
+            "  };" +
+            "  var build = function (query) {" +
+            "    var c = collect(), hay = c.text.toLowerCase(), needle = query.toLowerCase();" +
+            "    var ranges = [], from = 0, at;" +
+            "    while (needle && (at = hay.indexOf(needle, from)) !== -1) {" +
+            "      var s = locate(c.nodes, at), e = locate(c.nodes, at + needle.length);" +
+            "      try {" +
+            "        var r = document.createRange();" +
+            "        r.setStart(s.node, s.offset); r.setEnd(e.node, e.offset);" +
+            "        ranges.push(r);" +
+            "      } catch (err) {}" +
+            "      from = at + needle.length;" +
+            "      if (ranges.length >= 2000) { break; }" +     /* a pathological page must not hang the tab */
+            "    }" +
+            "    return ranges;" +
+            "  };" +
+            "  window.__atlasFind = function (query, forward) {" +
+            "    query = String(query || '');" +
+            "    if (!query) { clear(); ipc.post('find', { count: 0, index: 0, query: '' }); return; }" +
+            "    if (query !== hl.query) {" +
+            "      hl.ranges = build(query); hl.query = query; hl.index = -1;" +
+            "      if (supported && hl.ranges.length) {" +
+            "        var all = new Highlight();" +
+            "        for (var i = 0; i < hl.ranges.length; i++) { all.add(hl.ranges[i]); }" +
+            "        CSS.highlights.set('atlas-find', all);" +
+            "      }" +
+            "    }" +
+            "    var n = hl.ranges.length;" +
+            "    if (!n) {" +
+            "      if (supported) { CSS.highlights['delete']('atlas-find'); CSS.highlights['delete']('atlas-find-current'); }" +
+            "      ipc.post('find', { count: 0, index: 0, query: query });" +
+            "      return;" +
+            "    }" +
+            "    hl.index = (forward === false) ? ((hl.index - 1 + n) % n) : ((hl.index + 1) % n);" +
+            "    var cur = hl.ranges[hl.index];" +
+            "    if (supported) {" +
+            "      var one = new Highlight(); one.add(cur);" +
+            "      CSS.highlights.set('atlas-find-current', one);" +
+            "    }" +
+            "    try {" +
+            "      var rect = cur.getBoundingClientRect();" +
+            "      window.scrollBy({ top: rect.top - (window.innerHeight / 2), left: 0, behavior: 'auto' });" +
+            "    } catch (err2) {}" +
+            "    ipc.post('find', { count: n, index: hl.index + 1, query: query });" +
+            "  };" +
+            "  window.__atlasFindClear = clear;";
     },
     openInputChannel: function () {
         if (this._ipc || typeof window.ShellIpc === "undefined") { return; }
@@ -436,6 +682,7 @@ enyo.kind({
             this._ipc.on("scroll", function (msg) { self.onPageScroll(msg || {}); });
             this._ipc.on("hold", function (msg) { self.onPageHold(msg || {}); });
             this._ipc.on("url", function (msg) { self.onPageUrl(msg || {}); });
+            this._ipc.on("find", function (msg) { self.reportFindResult(msg || {}); });
         } catch (e) {
             enyo.log("[Atlas] input bridge unavailable: " + e);
         }
@@ -573,9 +820,42 @@ enyo.kind({
     insertStringAtCursor: function (inString) {
         this.runScript("document.execCommand('insertText', false, " + JSON.stringify(String(inString || "")) + ");");
     },
-    findInPage: function (inString) {
-        // No find API on pageContents; window.find covers the common case (no match count, no highlight-all).
-        this.runScript("window.find(" + JSON.stringify(String(inString || "")) + ");");
+    /* Atlas calls this three ways: findInPage("") to reset, findInPage(s) for a new search, and
+     * findInPage(s, true|false) for next/previous. The engine lives in the page (findEngineScript);
+     * if the injection has not run yet — find pressed before dom-ready — fall back to window.find so
+     * the button is never simply dead. */
+    findInPage: function (inString, inForward) {
+        var s = String(inString || "");
+        var pc = this.pageContents;
+        /* A patched webruntime exposes the engine's own find (see the browser_shell patch), which
+         * beats the injected one: it searches cross-origin iframes the injected script cannot reach,
+         * and its count comes from the engine rather than from our own DOM walk. Fall back when the
+         * engine predates the patch. */
+        var native = !!(pc && typeof pc.findInPage === "function");
+        if (!s) {
+            this._findQuery = "";
+            if (native) { try { pc.stopFindInPage(true); } catch (e) {} }
+            else { this.runScript("try { window.__atlasFindClear && window.__atlasFindClear(); } catch (e) {}"); }
+            this.reportFindResult({ count: 0, index: 0, query: "" });
+            return;
+        }
+        if (native) {
+            // findNext advances within the current search; a changed needle starts a new one.
+            var findNext = (s === this._findQuery);
+            this._findQuery = s;
+            try { pc.findInPage(s, inForward !== false, false, findNext); } catch (e2) {}
+            return;
+        }
+        this.runScript(
+            "if (window.__atlasFind) { window.__atlasFind(" + JSON.stringify(s) + ", " + (inForward !== false) + "); }" +
+            "else { window.find(" + JSON.stringify(s) + ", false, " + (inForward === false) + ", true, false, true, false); }");
+    },
+    /* Match count for the find bar. Reported from the page, so it arrives asynchronously. */
+    reportFindResult: function (msg) {
+        var app = window.__atlasApp;
+        var bar = this.owner && this.owner.$ && this.owner.$.findDialog;
+        if (bar && bar.setMatchCount) { bar.setMatchCount(msg.count || 0, msg.index || 0); }
+        else if (app) { app.log("[Atlas] find: " + (msg.index || 0) + "/" + (msg.count || 0)); }
     },
     runScript: function (js) {
         try { if (this.pageContents) { this.pageContents.executeJavaScriptInMainFrame(js); } } catch (e) {}
@@ -596,7 +876,7 @@ enyo.kind({
         case "clearCache":      this.clearData(["cache"]); break;
         case "clearCookies":    this.clearData(["cookies"]); break;
         case "insertStringAtCursor": this.insertStringAtCursor(a[0]); break;
-        case "findInPage":      this.findInPage(a[0]); break;
+        case "findInPage":      this.findInPage(a[0], a[1]); break;
         case "copy":            this.runScript("document.execCommand('copy');"); break;
         case "paste":           this.runScript("document.execCommand('paste');"); break;
         case "selectAll":       this.runScript("document.execCommand('selectAll');"); break;
@@ -608,16 +888,41 @@ enyo.kind({
         case "activate":        try { pc && pc.activate(); pc && pc.resumeDOM(); pc && pc.resumeMedia(); } catch (e) {} break;
         case "deactivate":      try { pc && pc.suspendMedia(); pc && pc.suspendDOM(); pc && pc.deactivate(); } catch (e) {} break;
         case "disconnectBrowserServer": this.teardownPageView(); break;
+        /* No engine call needed: the popup decision is made in our own newwindow handler. */
+        case "setBlockPopups":  this.blockPopups = !!a[0]; break;
+        /* CSS does what the engine hook would have done. The rule is injected rather than set on the
+         * document element so a page's own stylesheet cannot outrank it. */
+        case "setUserSelect":
+            this.runScript(
+                "(function(){var id='__atlasUserSelect',e=document.getElementById(id);" +
+                "if(" + (!a[0]) + "){if(!e){e=document.createElement('style');e.id=id;" +
+                "e.textContent='*{-webkit-user-select:none !important;user-select:none !important}';" +
+                "(document.head||document.documentElement).appendChild(e);}}" +
+                "else if(e){e.parentNode.removeChild(e);}})();");
+            break;
+        /* Chromium owns the drag handles, but dismissing the selection is still meaningful. */
+        case "disableSelectionMode":
+            this.runScript("try { window.getSelection().removeAllRanges(); } catch (e) {}");
+            break;
+        /* Web preferences, on a patched webruntime. The stock engine exposes neither, so both stay
+         * no-ops there rather than throwing into Atlas's call sites. */
         case "setEnableJavascript":
-        case "setBlockPopups":
+            if (pc && typeof pc.setEnableJavascript === "function") {
+                try { pc.setEnableJavascript(!!a[0]); } catch (e) {}
+            } else { this.unsupported(inMethod); }
+            break;
         case "setAcceptCookies":
+            if (pc && typeof pc.setAcceptCookies === "function") {
+                try { pc.setAcceptCookies(!!a[0]); } catch (e) {}
+            } else { this.unsupported(inMethod); }
+            break;
+        /* Still no engine equivalent even with the patch: print needs a whole printing stack that
+         * neva does not build, and Atlas's marker-based selection needs selectionBounds reporting. */
         case "setAutoplayWithSound":
         case "ignoreMetaRefreshTags":
-        case "setUserSelect":
         case "printFrame":
-        // The rest of Atlas's marker-driven selection has nothing to drive: Chromium owns the drag
-        // handles, and there is no selectionBounds channel to place Atlas's own markers.
-        case "disableSelectionMode":
+        // Atlas's own marker/popover selection UI is fed by the WPE backend's selectionBounds messages,
+        // which have no counterpart here.
         case "extendSelectionTo":
         case "setDragMode":
             this.unsupported(inMethod);

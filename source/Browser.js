@@ -911,6 +911,12 @@ enyo.kind({
 		this.openDialog($L("Error"), $L("Failed to set wallpaper"));
 	},
 	goBack: function() {
+		// Leaving fullscreen is what Back means while a video is fullscreen — navigating away from the
+		// page instead is the wrong thing and loses the user's place. Chromium host only; the method
+		// does not exist on the WPE WebView.
+		if (this.$.view.exitFullscreenIfActive && this.$.view.exitFullscreenIfActive()) {
+			return;
+		}
 		if (this.canGoBack) {
 			this.$.actionbar.goBack(0);
 		} else {
@@ -1010,6 +1016,13 @@ enyo.kind({
 		// faviconcache/fav_<host>.png — LunaSysMgr's file-access jailer blocks the app from reading
 		// /var/luna/... but ALWAYS allows its own dir. We reference it by a RELATIVE path (resolves under the
 		// app dir, same as the chrome images). Host sanitization must match the engine's atlas_favicon_dest_for.
+		// On the Chromium host none of that applies: the app chrome IS Chromium, so it can load the
+		// remote icon the page advertised (ChromiumWebView collects it from did-update-favicon-url) and
+		// no local cache file exists to point at.
+		var direct = this.$.view && this.$.view.faviconUrl;
+		if (direct) {
+			return {thumbnailFile: direct, iconFile32: direct, iconFile64: direct};
+		}
 		var m = (this.url || "").match(/^https?:\/\/([^\/]+)/i);
 		var icon = m ? ("faviconcache/fav_" + m[1].replace(/[^A-Za-z0-9.\-]/g, "_") + ".png") : "";
 		return {thumbnailFile: icon, iconFile32: icon, iconFile64: icon};
