@@ -255,6 +255,16 @@ enyo.kind({
 		}
 		enyo.log("[Atlas] launch mode=" + p.mode + " simple=" + this._launchSimple + " target=" + (p.target || p.url || "") + " oauthPrefix=" + this._oauthRedirectPrefix);
 		var url = p.target || p.url;
+		// Engine-restart recovery (Browser.engineRecover) reloads this card's document, because a
+		// plugin instance whose BrowserServer died cannot be re-connected in place. Our launch
+		// params still carry the URL the card was ORIGINALLY opened with, so the page the user was
+		// actually on is stashed in window.name (which survives a reload) — prefer it here. The
+		// stamp is deliberately left in place: it doubles as the guard that stops a reload loop.
+		var recovered = this.engineRecoveryUrl();
+		if (recovered) {
+			enyo.log("[Atlas] restoring page after engine-restart card reload: " + recovered);
+			url = recovered;
+		}
 		// #25 DIRECT-RENDER TEST (fb1/alpha hole): when the target URL carries the "atlasfs" marker,
 		// request webOS card fullscreen -> CardWindow::fullScreenEnabled(true) -> allowDirectRendering
 		// -> LunaSysMgr unblanks fb1 and the card renders into it. Gated so normal launches are unaffected.
@@ -277,6 +287,22 @@ enyo.kind({
 			var self = this;
 			setTimeout(function() { self.$.updater.checkForUpdate(); }, 6000);
 		}
+	},
+	/* Reads the stash Browser.engineRecover leaves in window.name before reloading the card after an
+	 * engine restart: "atlas-engine-recover:<ms>:<url>". Returns the URL to restore, or "" when there
+	 * is no stamp or it is too old to be about this card's current session. (The prefix and the
+	 * freshness window are mirrored in Browser.ENGINE_STAMP_PREFIX / ENGINE_STAMP_FRESH_MS.) */
+	engineRecoveryUrl: function() {
+		var PREFIX = "atlas-engine-recover:", FRESH_MS = 120000;
+		var n = "";
+		try { n = window.name || ""; } catch (e) { return ""; }
+		if (n.indexOf(PREFIX) !== 0) { return ""; }
+		var rest = n.substring(PREFIX.length);
+		var sep = rest.indexOf(":");
+		if (sep < 0) { return ""; }
+		var at = parseInt(rest.substring(0, sep), 10);
+		if (!at || ((new Date()).getTime() - at) > FRESH_MS) { return ""; }
+		return rest.substring(sep + 1);
 	},
 	// Updater fired: a strictly-newer build exists — confirm with the user before handing it to Preware.
 	onUpdateFound: function(inSender, inInfo) {

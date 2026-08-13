@@ -142,9 +142,27 @@ browsing; **start page** bookmark grid with launcher-style drag-to-reorder; **re
   `PalmSystem.paste()`.
 - **Content blocker** — WebKit content-rules blocking ads and trackers.
 - **TLS 1.3** — process-private OpenSSL 1.1 for the BrowserServer (system `libssl` untouched).
-- Cards are real webOS windows, managed by the card shell.
+- **Stability hardening** — a static + dynamic analysis pass (cppcheck / clang-tidy / valgrind +
+  ASan/UBSan) fixed a class of **use-after-free** bugs where async engine callbacks and timers could fire
+  after their card had been freed (they now check a live-page set), plus destructor leaks and yap-IPC
+  length-validation / leak issues. The 512 KB dynamic yap buffer path was verified clean under a
+  host-native sanitizer harness.
+- **Engine-restart recovery** — when the engine dies or wedges, the card no longer strands. It shows
+  *"Browser engine stopped — restarting…"*, waits for the respawn, then **reloads itself back onto the
+  page you were on**. Three parts, one per repo:
+  1. *Detect fast* — BrowserServer's yap deadlock watchdog now aborts only when the main loop is
+     stalled **and** the process is idle (`YapServer.cpp`). A memory-pressure GC pegs a core and is
+     given more time; a wedge sits near-idle and is killed at once. That gate is what makes a short
+     timeout safe, so the boot wrapper drops `-d` from 600000 to **90000**.
+  2. *Respawn* — upstart's `respawn limit 0 0` on the `atlas` job brings the engine straight back,
+     reaping orphaned WebProcesses on the way up.
+  3. *Rejoin* — the card reloads its own document (`Browser.engineDisconnected`). Nothing less works:
+     a plugin instance whose BrowserServer died cannot be re-connected in place, and a card cannot
+     close itself to be replaced. The page is carried across the reload in `window.name`, because
+     launch params come back empty.
 
-**LuneOS / Chromium only**
+  Measured on-device 2026-08-03 against a real wedge: **14 min 30 s → 63 s**, page restored
+  automatically. Before this, users had no recourse but a reboot.
 
 - **In-app tabs** with a tab strip, since the shell gives the app a single window. Background tabs
   suspend their DOM and media.
@@ -161,13 +179,29 @@ browsing; **start page** bookmark grid with launcher-style drag-to-reorder; **re
 - Page dialogs, HTTP auth and the long-press context menu come from the shell's own events.
 - `html5test.co` scores **574/588** on this engine (WPE scores ~535).
 
-## Known issues and limitations
+The stack is now **atlas-only**: the earlier Isis engine has been fully **decommissioned** — all
+`isis*` upstart jobs, plugins, binaries and ~153 MB of dormant on-device build directories were
+removed. Canonical build/deploy paths are pinned in `~/webos/wpe/DEPLOY-PATHS.md` (there is exactly
+one `BrowserServer-atlas` binary and one `BrowserAdapterAtlas.so` plugin — deploying anywhere else
+silently no-ops). Text selection (yellow highlight, drag markers, Copy/Select All, tap-dismiss, 512 KB
+copy), the **editable-field menu with paste** (in inputs and on normal pages), and the **launcher-style
+start-page reorder** are committed and verified on-device. A **static + dynamic memory-safety pass**
+(use-after-free guards, yap fixes) is committed and deployed on both the server and client sides.
 
-**webOS / WPE**
+**0.9.8** is a stability release: engine hangs now recover automatically in ~1 minute instead of
+needing a reboot (see *Engine-restart recovery* above). Verified on-device against a real wedge on
+2026-08-03; the fix spans all three repos, so app-only packaging is not enough for it — ship the full
+ipk (`atlas-wpe-env/build-ipk-atlas.sh`).
 
-- LunaCE double-fires taps (touch + mouse → `onclick` 2–4× per tap); dialog actions are debounced.
-- Real-site load time is CPU-bound on first-party JS; the DFG JIT helps execution but page load stays
-  near the hardware limit.
+## Known issues / limitations
+
+- **GPU wedge** ([atlas-wpe-env#3](https://github.com/Herrie82/atlas-wpe-env/issues/3)) — GPU-heavy work
+  (site pop-up menus, rotation) can park BrowserServer's main thread in a futex wait: yap keeps
+  accepting, `openURL` is never serviced, pages stop loading. The root cause is unfixed, but it now
+  **recovers itself in ~1 minute** instead of looking permanent — see *Engine-restart recovery* below.
+- **LunaCE double-fires taps** (touch + mouse → `onclick` 2–4× per tap); dialog actions are debounced.
+- **Real-site load time is CPU-bound on first-party JS** on the TouchPad; the DFG JIT helps JS
+  execution but page load stays near the hardware limit.
 - Page text-selection depends on the engine hit-test; the long-press must land on actual text.
 
 **LuneOS / Chromium**
