@@ -1,6 +1,6 @@
 # Atlas Web
 
-Atlas Web is an Enyo 1 web browser for **webOS** (HP TouchPad, webOS 3.0.5), running a modern
+Atlas Web is an Enyo 1 web browser for **webOS** (HP TouchPad, webOS 3.0.5 and webOS CE 3.1.0), running a modern
 **WPE WebKit 2.52** engine as a *separate* browser — it never touches Palm's system
 `/usr/bin/BrowserServer` or the stock WebKit. It is the **Atlas rebrand** (`org.webosports.app.atlas`)
 of the earlier Isis browser.
@@ -81,22 +81,26 @@ modern web-platform support, on the original hardware (Adreno 220, Cortex-A8, ke
   after their card had been freed (they now check a live-page set), plus destructor leaks and yap-IPC
   length-validation / leak issues. The 512 KB dynamic yap buffer path was verified clean under a
   host-native sanitizer harness.
-- **Engine-restart recovery** — when the engine dies or wedges, the card no longer strands. It shows
+- **Engine-restart recovery** — when the engine dies, the card no longer strands. It shows
   *"Browser engine stopped — restarting…"*, waits for the respawn, then **reloads itself back onto the
-  page you were on**. Three parts, one per repo:
-  1. *Detect fast* — BrowserServer's yap deadlock watchdog now aborts only when the main loop is
-     stalled **and** the process is idle (`YapServer.cpp`). A memory-pressure GC pegs a core and is
-     given more time; a wedge sits near-idle and is killed at once. That gate is what makes a short
-     timeout safe, so the boot wrapper drops `-d` from 600000 to **90000**.
-  2. *Respawn* — upstart's `respawn limit 0 0` on the `atlas` job brings the engine straight back,
+  page you were on**. Two parts:
+  1. *Respawn* — upstart's `respawn limit 0 0` on the `atlas` job brings the engine straight back,
      reaping orphaned WebProcesses on the way up.
-  3. *Rejoin* — the card reloads its own document (`Browser.engineDisconnected`). Nothing less works:
+  2. *Rejoin* — the card reloads its own document (`Browser.engineDisconnected`). Nothing less works:
      a plugin instance whose BrowserServer died cannot be re-connected in place, and a card cannot
      close itself to be replaced. The page is carried across the reload in `window.name`, because
      launch params come back empty.
 
-  Measured on-device 2026-08-03 against a real wedge: **14 min 30 s → 63 s**, page restored
-  automatically. Before this, users had no recourse but a reboot.
+  > **BrowserServer's deadlock watchdog is OFF as of 0.9.10** (`-d 0`). Its gate — "main loop stalled
+  > **and** process idle" — is also an exact description of a healthy engine with nothing to do, because
+  > the heartbeat counter only ever proves the loop is BUSY, never that it is ALIVE. On an idle tablet
+  > with one card open it aborted the engine twice in six minutes, tearing down the user's cards.
+  >
+  > **Atlas does not try to detect a hang.** A wedge leaves the process alive, and every heuristic tried
+  > so far either fired at healthy engines or missed real wedges. Instead there is a **Restart Browser
+  > Engine** item in the app menu: you decide, and the recovery above then reloads your card onto its
+  > page. It works through a loopback control socket on `atlas-sensord` (root, and independent of
+  > BrowserServer) because the app runs as `luna` and cannot exec.
 
 ## Status
 
@@ -109,17 +113,29 @@ copy), the **editable-field menu with paste** (in inputs and on normal pages), a
 start-page reorder** are committed and verified on-device. A **static + dynamic memory-safety pass**
 (use-after-free guards, yap fixes) is committed and deployed on both the server and client sides.
 
-**0.9.8** is a stability release: engine hangs now recover automatically in ~1 minute instead of
-needing a reboot (see *Engine-restart recovery* above). Verified on-device against a real wedge on
-2026-08-03; the fix spans all three repos, so app-only packaging is not enough for it — ship the full
-ipk (`atlas-wpe-env/build-ipk-atlas.sh`).
+**0.9.10** is a packaging release — no engine code changed, and every payload binary is byte-for-byte
+what 0.9.8 and 0.9.9 shipped. It makes one package install on **both webOS 3.0.5 and webOS CE 3.1.0**
+(the old `Depends` on the Modernize TLS bundle was unsatisfiable on 3.1.0, which bakes that stack in),
+makes the install actually run its setup under `com.palm.appinstaller` as well as under Preware, stops
+uninstalls leaving an undeletable app folder behind, and **turns off the deadlock watchdog** that was
+restarting a healthy idle engine. See [RELEASE-NOTES-0.9.10.md](RELEASE-NOTES-0.9.10.md).
+
+**0.9.8** was a stability release: engine hangs recovered automatically in ~1 minute instead of
+needing a reboot. That recovery depended on the deadlock watchdog, which 0.9.10 disables — see the note
+under *Engine-restart recovery* above for why, and what it costs.
 
 ## Known issues / limitations
 
-- **GPU wedge** ([atlas-wpe-env#3](https://github.com/Herrie82/atlas-wpe-env/issues/3)) — GPU-heavy work
-  (site pop-up menus, rotation) can park BrowserServer's main thread in a futex wait: yap keeps
-  accepting, `openURL` is never serviced, pages stop loading. The root cause is unfixed, but it now
-  **recovers itself in ~1 minute** instead of looking permanent — see *Engine-restart recovery* below.
+- **GPU wedge — FIXED in 0.9.11** ([atlas-wpe-env#3](https://github.com/Herrie82/atlas-wpe-env/issues/3)).
+  It was never the GPU: three engine-side bugs (a stale close of a WebKit-owned fd and an unread
+  FRAME_ACK backlog in `libWPEBackend-atlas.so`, plus a debug hook stealing JSC's SIGUSR1 GC signal in
+  `BrowserPageWPE.cpp`) each parked BrowserServer's main loop while the process stayed alive. All three
+  were caught live on-device and fixed — see RELEASE-NOTES-0.9.11.md. The watchdog stays off (0.9.10's
+  decision stands); *Restart Browser Engine* remains in the menu as belt-and-braces.
+- **An OS upgrade takes the engine out.** Atlas installs half of itself into the rootfs (the browser
+  plugin, the upstart jobs, the LunaService role, the db8 config); a webOS re-flash or upgrade replaces
+  the rootfs and wipes all of it, while the app itself survives on `/media/cryptofs`. The icon stays in
+  the launcher and the browser opens and renders nothing. **Reinstall Atlas after upgrading webOS.**
 - **LunaCE double-fires taps** (touch + mouse → `onclick` 2–4× per tap); dialog actions are debounced.
 - **Real-site load time is CPU-bound on first-party JS** on the TouchPad; the DFG JIT helps JS
   execution but page load stays near the hardware limit.
