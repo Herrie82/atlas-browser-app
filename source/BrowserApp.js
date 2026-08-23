@@ -153,6 +153,7 @@ enyo.kind({
 			{name: "passwordsItem", caption: $L("Password Manager"), onclick: "passwordsClick"},
 			{name: "autofillItem", caption: $L("Autofill"), onclick: "autofillClick"},
 			{name: "printMenuItem", caption: $L("Print"), onclick: "printClick"},
+			{name: "restartEngineItem", caption: $L("Restart Browser Engine"), onclick: "restartEngineClick"},
 			{caption: $L("Help"), onclick: "helpClick"}
 		]},
 		{name: "loginImporter", kind: "LoginImporter", onImportDone: "loginImportDone"},
@@ -772,6 +773,14 @@ enyo.kind({
 		if (this.isBrowserShowing()) {
 			this.$.browser.showFind();
 		}
+	},
+	//* User-triggered engine restart. Atlas does not try to detect a hang; this is how you clear one.
+	//* The card reloads itself onto its page once the new engine is up.
+	restartEngineClick: function() {
+		if (!this._menuArmed) { return; }   // AppMenu double-fire
+		this._menuArmed = false;
+		var b = this.isBrowserShowing() && this.$.browser;
+		if (b) { b.requestEngineRestart(); b.engineDisconnected(); }
 	},
 	printClick: function() {
 		if (!this._menuArmed) { return; }   // AppMenu double-fire -> would open two print dialogs
