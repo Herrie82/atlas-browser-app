@@ -13,6 +13,32 @@ log() { echo "atlas-postinst: $*"; }
 #                the feed declares PostInstallFlags=RestartLuna so it happens once, after the batch
 PKG_TARGET=standalone
 
+# 0a. Stop the engine FIRST, then sweep. Two reasons, and the order between them matters:
+#
+#   UPGRADE. ipkg unpacks straight over a running install (Preware upgrades in place — the old package's
+#   prerm never runs), so the previous engine and its helper daemons are still live and still holding the
+#   files we just replaced. `start atlas` at the end would be a no-op on an already-running job, leaving
+#   the user on the OLD binaries until the next reboot.
+#
+#   FUSE. /media/cryptofs renames a file that is still open to .fuse_hiddenXXXXXXXX instead of removing
+#   it. Those are dead weight (~9 MB in the engine lib dir), and while a helper holds one it cannot be
+#   deleted at all — which is why an uninstall used to leave an undeletable app folder behind. So kill
+#   the holders BEFORE sweeping, or the sweep quietly does nothing.
+#
+# The helpers (qcamd/qspkd/qmicd) are children of BrowserServer and outlive it; a stale one also makes
+# the boot wrapper skip starting the new one. atlas-sensord is in the list for the same reason `start`
+# is not enough on an upgrade — step 3 starts it again below. On a fresh install every command here is
+# a no-op.
+stop atlas 2>/dev/null
+stop atlas-sensord 2>/dev/null
+for _p in BrowserServer-atlas qcamd qspkd qmicd atlas-sensord; do killall "$_p" 2>/dev/null; done
+sleep 2
+for _p in BrowserServer-atlas qcamd qspkd qmicd atlas-sensord; do killall -9 "$_p" 2>/dev/null; done
+# Deleting a file FUSE has hidden while somebody still holds it just re-hides it under a NEW
+# .fuse_hidden name, so this only really clears once the holders are gone — which is why it runs here,
+# after the kills, and why a stubborn remnant clears on the next install or reboot rather than now.
+find "$APP" -name '.fuse_hidden*' -exec rm -f {} \; 2>/dev/null
+
 # 0. prerequisite: community OpenSSL 1.1 lives in /usr/lib/ssl11 (NOT bundled — we depend on it for TLS 1.3).
 [ -e /usr/lib/ssl11/libssl.so.1.1 ] || log "WARNING: /usr/lib/ssl11/libssl.so.1.1 missing — install the webOS OpenSSL 1.1 package first or HTTPS will not work."
 
@@ -108,6 +134,8 @@ luna-send -n 1 palm://com.palm.configurator/run '{"types":["dbpermissions"]}' 2>
 # or the user is left with a browser that cannot render until they work out that Luna needs restarting.
 #
 # ATLAS_POSTINST_RESTART_LUNA=1 forces the restart regardless of target.
+# The engine was stopped in step 0a (so an upgrade does not keep running the binaries we replaced);
+# this starts the new one.
 log "starting atlas engine..."
 start atlas 2>/dev/null
 if [ "${ATLAS_POSTINST_RESTART_LUNA:-0}" = 1 ] || [ "$PKG_TARGET" = standalone ]; then

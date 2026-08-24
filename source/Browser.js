@@ -1054,6 +1054,17 @@ enyo.kind({
 	 * sleeps 3s, then the engine initialises); reloading sooner just lands in a still-dead engine.
 	 * Jittered so that several open cards recovering at once don't reload in lockstep.
 	 */
+	//* atlas-sensord's loopback control socket (it is root; this card is not). Used ONLY by the
+	//* Restart Browser Engine menu item — Atlas does not try to detect a hang by itself.
+	ENGINE_CTL_URL: "http://127.0.0.1:8442/restart-engine",
+	//* Fire-and-forget: the response does not matter, and the engine is going down either way.
+	requestEngineRestart: function() {
+		try {
+			var x = new XMLHttpRequest();
+			x.open("GET", this.ENGINE_CTL_URL + "?t=" + (new Date()).getTime(), true);
+			x.send(null);
+		} catch (e) { this.log("[Atlas] engine restart request failed: " + e); }
+	},
 	ENGINE_RECOVER_MS: 15000,
 	//* window.name survives a document reload (localStorage would be shared by every card), so it
 	//* carries both the page to restore and the "we already tried" stamp that stops a reload loop.

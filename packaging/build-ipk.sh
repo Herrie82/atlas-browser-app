@@ -165,11 +165,21 @@ cp "$POSTINST" "$CTRL/postinst"
 cp "$PRERM"    "$CTRL/prerm"
 chmod 755 "$CTRL/postinst" "$CTRL/prerm"
 
-echo "-- assemble ipk (ar: debian-binary + control.tar.gz + data.tar.gz)"
+# The SAME scripts again under the names webOS's own installer looks for. `ipkg -o <root> install` defers
+# postinst ("offline root mode: not running ..."); Preware knows that and runs the deferred script itself,
+# but com.palm.appinstaller (WebOS Quick Install / a tapped .ipk / installNoVerify) does not — it `ar x`es
+# the package and runs pmPostInstall.script / pmPreRemove.script as root instead. Without those members it
+# writes a 0-byte placeholder and reports SUCCESS for an install that never set up the engine, so the
+# browser opens and renders nothing. Ship both names; only one runs per install and they are idempotent.
+cp "$CTRL/postinst" "$B/pmPostInstall.script"; chmod 755 "$B/pmPostInstall.script"
+cp "$CTRL/prerm"    "$B/pmPreRemove.script";   chmod 755 "$B/pmPreRemove.script"
+
+echo "-- assemble ipk (ar: debian-binary + control.tar.gz + data.tar.gz + pm*.script)"
 printf '2.0\n' > "$B/debian-binary"
 ( cd "$CTRL" && tar --owner=0 --group=0 -czf "$B/control.tar.gz" ./control ./postinst ./prerm )
 ( cd "$DATA" && tar --owner=0 --group=0 -czf "$B/data.tar.gz" ./ )
 OUT="$B/${ID}_${VER}_${ARCH}.ipk"
-( cd "$B" && ar rc "$(basename "$OUT")" debian-binary control.tar.gz data.tar.gz )
+( cd "$B" && ar rc "$(basename "$OUT")" debian-binary control.tar.gz data.tar.gz \
+                   pmPostInstall.script pmPreRemove.script )
 echo "== built: $OUT  ($(du -h "$OUT" | cut -f1)) =="
 ar t "$OUT"
