@@ -22,6 +22,9 @@ enyo.kind({
 	},
 	components: [
 		{kind: "Input", name: "input", flex: 2, autoCapitalize: "lowercase", changeOnKeypress: true, onchange: "inputChange"},
+		// Match counter ("3 / 17"). Only the Chromium engine reports counts, so on the WPE host this
+		// stays empty and the bar looks exactly as it did.
+		{name: "matchCount", className: "browser-findbar-count"},
 		{flex: 1},
 		//{kind: "NoFocusButton", name: "prev", caption: $L("prev"), disabled: true, onclick: "findPrevious"},
 	    {kind: "NoFocusButton", name: "prev", caption: $L("prev"), disabled: true, onclick: "findPrevious", showing: true},
@@ -42,7 +45,19 @@ enyo.kind({
 		this.$.next.setDisabled(disabled);
 		if (!disabled) {
 			this.doFind(value);
+		} else {
+			this.setMatchCount(0, 0);
 		}
+	},
+	//* Engines that can count matches call this; inIndex is 1-based, 0 when there is no current match.
+	setMatchCount: function(inCount, inIndex) {
+		var s = "";
+		if (inCount > 0) {
+			s = (inIndex > 0) ? (inIndex + " / " + inCount) : String(inCount);
+		} else if (this.$.input.getValue().length >= 2) {
+			s = $L("no matches");
+		}
+		this.$.matchCount.setContent(s);
 	},
 	findPrevious: function() {
 		this.doGoToPrevious();

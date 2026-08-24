@@ -14,6 +14,9 @@
 
 enyo.depends(
 	"source/AtlasEngineOverride.js",
+	"source/engine/ChromiumWebView.js",
+	"source/engine/ChromiumOverlay.js",
+	"css/chromium-tabs.css",
 	"$enyo-lib/printdialog/",
 	"css/browser.css",
 	"source/ActionBar.js",
@@ -39,6 +42,7 @@ enyo.depends(
 	"source/DownloadList.js",
 	"source/ProgressItem.js",
 	"source/BrowserApp.js",
+	"source/engine/TabLayer.js",
 	"source/BrowserContextMenu.js",
 	"source/ReaderView.js",
 	"source/AcceptCancelPopup.js",

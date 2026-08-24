@@ -30,6 +30,14 @@
         _atlasDebounce.__atlasLastOpen = now;   // mirror onto the static so it works even if rw differs next call
         if (rw) { rw.__atlasInAppOpenAt = now; }
         _atlasDebounce.__atlasInAppOpenAt = now;
+        // On the Chromium shell there is only ONE window (shell.createWindow returns nothing usable),
+        // so a "card" is an in-app tab. This sits AFTER the debounce above on purpose: a single press
+        // arrives as both a tap and a click, and branching before it opened two tabs every time.
+        if (window.__atlasChromium) {
+            if (typeof window.__atlasOpenTab === "function") { window.__atlasOpenTab(p); }
+            else if (window.enyo && enyo.log) { enyo.log("[Atlas] openCard ignored: no tab layer on the chromium host"); }
+            return;
+        }
         if (enyo.log) { enyo.log("[Atlas] openCard OPEN target=" + (p.target || "") + " rw=" + (rw ? 1 : 0)); }
         enyo.windows.openWindow("index.html", null, p);
     };
@@ -110,6 +118,9 @@
         }
         return false;
     }
+    // The NPAPI mime swap only means anything on the WPE host — on the Chromium shell the WebView kind
+    // is replaced wholesale by the PageView adapter, and stamping a plugin mime would break it.
+    if (window.__atlasChromium) { return; }
     if (!patch() && window.enyo && enyo.dispatcher) {
         // BasicWebView not ready yet — retry shortly
         var t = setInterval(function () { if (patch()) { clearInterval(t); } }, 50);
