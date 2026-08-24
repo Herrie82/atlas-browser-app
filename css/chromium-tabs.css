@@ -1,0 +1,67 @@
+/* Tab strip for the Chromium (browser_shell) host — Atlas's cards become in-app tabs there.
+   Styled to sit above the ActionBar and read as part of the same dark chrome. */
+
+.atlas-tabstrip {
+	background: #1c1c1c;
+	border-bottom: 1px solid #000;
+	height: 34px;
+	overflow: hidden;
+}
+
+.atlas-tabstrip-row {
+	display: -webkit-box;
+	display: flex;
+	height: 34px;
+	overflow-x: auto;
+	overflow-y: hidden;
+}
+
+.atlas-tab {
+	display: -webkit-box;
+	display: flex;
+	-webkit-box-align: center;
+	align-items: center;
+	max-width: 200px;
+	min-width: 90px;
+	padding: 0 6px 0 10px;
+	border-right: 1px solid #000;
+	background: #2b2b2b;
+	color: #bbb;
+	font-size: 13px;
+	line-height: 34px;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.atlas-tab-active {
+	background: #3d3d3d;
+	color: #fff;
+	box-shadow: inset 0 2px 0 #6ab0f3;
+}
+
+.atlas-tab-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	-webkit-box-flex: 1;
+	flex: 1;
+}
+
+.atlas-tab-close {
+	margin-left: 6px;
+	padding: 0 5px;
+	color: #888;
+	font-size: 16px;
+}
+
+.atlas-tab-close:active {
+	color: #fff;
+}
+
+.atlas-tab-new {
+	padding: 0 14px;
+	color: #ccc;
+	font-size: 20px;
+	line-height: 34px;
+	cursor: pointer;
+}

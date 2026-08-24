@@ -758,3 +758,13 @@ img.atlas-kb-button {
 	border-right: 7px solid transparent;
 	border-top: 7px solid #39393b;
 }
+
+/* Find-bar match counter. Empty (and so invisible) on engines that cannot count matches, which is why
+   it carries no fixed width or background. */
+.browser-findbar-count {
+	padding: 0 8px;
+	color: #b0b0b0;
+	font-size: 16px;
+	line-height: 34px;
+	white-space: nowrap;
+}
