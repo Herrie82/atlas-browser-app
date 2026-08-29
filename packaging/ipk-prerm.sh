@@ -52,6 +52,20 @@ log "removing our db8 kind files..."
 rm -f /etc/palm/db/kinds/org.webosports.logins       /etc/palm/db/kinds/org.webosports.autofill
 rm -f /etc/palm/db/permissions/org.webosports.logins /etc/palm/db/permissions/org.webosports.autofill
 
+# Drop our URL/MIME handler claims. The resolved table is persisted to
+# /var/usr/palm/command-resource-handlers-active.json and reloaded at startup, so a
+# claim like "^file:" would otherwise keep pointing local media at an app that is no
+# longer installed.
+#
+# BACKGROUNDED ON PURPOSE — and it matters more here than in postinst: this script runs
+# SYNCHRONOUSLY from inside LunaSysMgr, before `ipkg remove` (see the note below), and
+# com.palm.applicationManager is LunaSysMgr's own service. A blocking `luna-send -n 1`
+# would wait on a reply from the process waiting for this script to exit. The `( … & )`
+# is load-bearing; do not "simplify" it.
+log "removing our URL/MIME handler registrations..."
+( luna-send -n 1 palm://com.palm.applicationManager/removeHandlersForAppId \
+    '{"appId":"org.webosports.app.atlas"}' & ) >/dev/null 2>&1
+
 # Do NOT restart LunaSysMgr here, on either target. com.palm.appinstaller runs this script as
 # pmPreRemove.script SYNCHRONOUSLY, from inside LunaSysMgr, BEFORE `ipkg remove` — so killing Luna kills
 # the removal itself: prerm runs, Luna restarts, the package is still installed. Observed 2026-08-23.
