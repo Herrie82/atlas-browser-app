@@ -54,6 +54,12 @@ when the on-device install flow changes.
 > reference deviceroot — that is what produced the ~99 MB `0.9.8` ipk. Use that one unless you
 > specifically have a `deploy-252-jitfix` tree to package. Note that 0.9.8's engine-hang recovery spans
 > this repo *and* BrowserServer *and* the boot wrapper, so an app-only package does not carry it.
+>
+> **Source `env-atlas-cross.sh` before running it.** That builder strips the engine with the cross
+> toolchain; run it without the toolchain on `PATH` and it ships an unstripped `libWPEWebKit`, giving a
+> **~113 MB / ~250 MB installed** package instead of ~99 MB / ~209 MB. The browser still works, so the
+> size is the only symptom. It now aborts rather than skipping the strip, but check the final line reads
+> `(99M, installed ~209 MB)` before you release.
 
 Produces `org.webosports.app.atlas_<version>_all.ipk` (~56 MB with the `deploy-252-jitfix` engine set;
 the from-source builder above yields ~99 MB, ~209 MB installed). `build-ipk.sh` assembles:
