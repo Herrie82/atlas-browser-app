@@ -121,6 +121,37 @@ log "registering db8 kinds..."
 luna-send -n 1 palm://com.palm.configurator/run '{"types":["dbkinds"]}'       2>/dev/null
 luna-send -n 1 palm://com.palm.configurator/run '{"types":["dbpermissions"]}' 2>/dev/null
 
+# 5c. drop our stale URL/MIME handler registrations so the CURRENT appinfo.json wins.
+#
+# LunaSysMgr persists the resolved handler table to
+# /var/usr/palm/command-resource-handlers-active.json and loads THAT at startup in
+# preference to rebuilding it, so an upgrade never revises what an older Atlas
+# claimed: the stale entry outlives the install. That is how 0.9.11's
+# {"urlPattern": "^file:"} kept opening every local photo, video and song in Atlas
+# long after the claim was dropped from appinfo.json — ApplicationManagerService
+# resolves non-scheme redirect handlers BEFORE mime and extension handlers, so one
+# ^file: claim outranks every media app on the device.
+#
+# BACKGROUNDED ON PURPOSE. com.palm.applicationManager is served by LunaSysMgr, and
+# this script runs from inside LunaSysMgr's own request handling, so a blocking
+# `luna-send -n 1` waits for a reply from the process that is waiting for this script
+# to exit — nothing times out, Preware sits on "Updating" and the tablet stops
+# responding, with nothing logged. Same wedge the Synergy Revival connectors hit
+# (Herrie82/webos-synergy-revival #4, #6). The `( … & )` is load-bearing; do not
+# "simplify" it. com.palm.configurator above is safe because it is a separate daemon.
+#
+# We deliberately do NOT rescan here: a rescan is disruptive mid-install, and the
+# boot-time scan re-registers us from the current manifest once the stale entry is gone.
+#
+# UNVERIFIED: whether removeHandlersForAppId exists on this platform. If it does not,
+# this is a silent no-op and the handler table has to be cleared another way. Check with
+#   luna-send -n 1 -f palm://com.palm.applicationManager/removeHandlersForAppId \
+#       '{"appId":"org.webosports.app.atlas"}'
+# from a shell ON THE DEVICE (safe there — an ordinary process, not inside LunaSysMgr).
+log "clearing our stale URL/MIME handler registrations..."
+( luna-send -n 1 palm://com.palm.applicationManager/removeHandlersForAppId \
+    '{"appId":"org.webosports.app.atlas"}' & ) >/dev/null 2>&1
+
 # 6. start the engine, then reload LunaSysMgr so it picks up the new NPAPI plugin
 # (application/x-atlas-browser) — but only when we are the ones who should do it.
 #
